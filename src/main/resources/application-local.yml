@@ -1,0 +1,10 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+  jpa:
+    open-in-view: false
+logging:
+  level:
+    team.fireway.goldenlane: INFO
+
