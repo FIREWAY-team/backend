@@ -1,0 +1,1 @@
+"""Vehicles adapters (team stub)."""

@@ -1,0 +1,7 @@
+version = 1
+revision = 1
+requires-python = ">=3.12"
+
+# This lockfile is checked in for reproducible uv workflows. Regenerate with
+# `uv lock` after installing uv when dependency resolution is available.
+

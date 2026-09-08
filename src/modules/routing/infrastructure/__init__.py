@@ -1,0 +1,1 @@
+"""Routing adapters (team stub)."""

@@ -1,0 +1,1 @@
+"""CCTV adapters (team stub)."""

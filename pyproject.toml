@@ -1,0 +1,17 @@
+[project]
+name = "golden-lane-backend"
+version = "0.1.0"
+description = "Golden Lane emergency vehicle routing decision engine"
+requires-python = ">=3.12"
+dependencies = ["alembic>=1.13,<2", "fastapi>=0.115,<1", "geoalchemy2>=0.15,<1", "httpx>=0.27,<1", "pydantic-settings>=2.6,<3", "rich>=13.9,<14", "sqlalchemy[asyncio]>=2.0,<3", "asyncpg>=0.30,<1", "structlog>=24.4,<26", "uvicorn[standard]>=0.32,<1"]
+[dependency-groups]
+dev = ["pre-commit>=4.0,<5", "pytest>=8.3,<9", "pytest-asyncio>=0.24,<1", "ruff>=0.8,<1"]
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+

@@ -1,0 +1,1 @@
+"""Scenarios domain (team stub)."""

@@ -1,0 +1,1 @@
+"""Scenarios adapters (team stub)."""
