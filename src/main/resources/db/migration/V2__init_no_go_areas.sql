@@ -1,0 +1,4 @@
+CREATE TABLE no_go_areas (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY, dong VARCHAR(64), reason TEXT, layer TINYINT,
+  polygon GEOMETRY NOT NULL SRID 4326, SPATIAL INDEX (polygon)
+);
