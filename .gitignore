@@ -141,3 +141,46 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+################################################################
+# Java / Gradle  (2026-09 백엔드 뼈대 세팅 시 추가)
+# 위쪽은 저장소 생성 시 붙은 Node.js 템플릿이다. 이 레포는 Java라
+# build/ 나 .gradle/ 이 걸러지지 않아 산출물이 커밋될 수 있었다.
+################################################################
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.war
+*.log
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### Eclipse / STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+
+### VS Code ###
+.vscode/
+
+### 로컬 설정 / 비밀값 ###
+application-local.yml
+application-local.yaml
+
+### macOS ###
+.DS_Store

@@ -1,0 +1,8 @@
+plugins {
+    // 빌드에 필요한 JDK(=build.gradle의 toolchain 17)를 Gradle이 직접 받아온다.
+    // 이게 없으면 "내 컴퓨터에 깔린 JDK"에 빌드가 의존한다.
+    // 팀원마다 로컬 JDK가 8/11/17/21로 제각각이어도 모두 같은 17로 빌드된다.
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
+rootProject.name = 'backend'

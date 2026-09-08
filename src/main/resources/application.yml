@@ -1,0 +1,82 @@
+spring:
+  application:
+    name: backend
+  profiles:
+    default: local
+
+server:
+  port: 8080
+
+# Nginx가 /actuator/health 만 백엔드로 보낸다. health 외에는 노출하지 않는다.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+---
+# ============================================================
+# local — 각자 로컬 MySQL. RDS에 붙지 않는다.
+# ============================================================
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/firedispatch?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: ${LOCAL_DB_USERNAME:root}
+    password: ${LOCAL_DB_PASSWORD:root}
+
+  jpa:
+    hibernate:
+      ddl-auto: update      # 로컬에서만. 운영(prod)은 none이다.
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    org.hibernate.SQL: debug
+
+---
+# ============================================================
+# prod — 서버 컨테이너. 값은 전부 ~/deploy/backend.env 에서 주입된다.
+#        깃에는 어떤 실제 값도 들어가지 않는다.
+# ============================================================
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+    hikari:
+      # t3.micro(램 1GB) + db.t4g.micro 기준. 늘리기 전에 RDS max_connections를 먼저 볼 것.
+      maximum-pool-size: 10
+      minimum-idle: 2
+      # 기본값 30초를 그대로 두면 커넥션이 말라도 30초를 기다린 뒤에야 실패한다.
+      # 3초로 줄여서 장애가 '느림'이 아니라 '에러'로 빨리 드러나게 한다.
+      connection-timeout: 3000
+      max-lifetime: 1740000   # RDS wait_timeout 보다 짧게
+
+  jpa:
+    hibernate:
+      ddl-auto: none        # 운영 DB 스키마를 앱이 건드리지 않는다.
+    open-in-view: false
+    show-sql: false
+
+logging:
+  level:
+    root: info
