@@ -41,3 +41,42 @@ jobs:
             ghcr.io/fireway-team/backend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: AWS 자격 증명 (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::136022486319:role/fire-dispatch-gha-deploy
+          aws-region: ap-northeast-2
+
+      - name: SSM으로 서버에서 pull & 재기동
+        run: |
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids i-0a21fc6612d33c27a \
+            --document-name AWS-RunShellScript \
+            --comment "deploy ${{ github.sha }}" \
+            --parameters 'commands=["su - ubuntu -c /home/ubuntu/deploy/deploy.sh"]' \
+            --query Command.CommandId --output text)
+          echo "CommandId: $CMD_ID"
+
+          aws ssm wait command-executed \
+            --command-id "$CMD_ID" \
+            --instance-id i-0a21fc6612d33c27a || true
+
+          aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id i-0a21fc6612d33c27a \
+            --query '{Status:Status,Out:StandardOutputContent,Err:StandardErrorContent}' \
+            --output json
+
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id i-0a21fc6612d33c27a \
+            --query Status --output text)
+          [ "$STATUS" = "Success" ] || exit 1
