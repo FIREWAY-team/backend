@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.*;
 @WebMvcTest(controllers = GlobalExceptionHandlerTest.Probe.class)
 @Import(GlobalExceptionHandler.class)
 class GlobalExceptionHandlerTest {
-    MockMvc mvc;
     @org.springframework.beans.factory.annotation.Autowired MockMvc mvc;
     @Test void notFoundIs404() throws Exception { mvc.perform(get("/probe/404")).andExpect(status().isNotFound()).andExpect(jsonPath("$.error.code").value("NOT_FOUND")); }
     @Test void validationIs422() throws Exception { mvc.perform(get("/probe/422")).andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR")); }
