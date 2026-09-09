@@ -1,7 +1,16 @@
 package com.fireway.backend.modules.routing.interfaces.dto;
-import com.fireway.backend.modules.routing.domain.Route;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fireway.backend.modules.routing.application.RoutePlanResult;
 import java.util.List;
-public record RouteResponse(String routeId, String scenarioId, double distanceM, int etaSeconds, List<WaypointResponse> waypoints) {
-    public static RouteResponse from(Route r) { return new RouteResponse(r.routeId(), r.scenarioId(), r.distanceM(), r.etaSeconds(), r.waypoints().stream().map(w -> new WaypointResponse(w.lat(), w.lon(), w.instruction())).toList()); }
-    public record WaypointResponse(double lat, double lon, String instruction) { }
+
+public record RouteResponse(List<RouteCandidateDto> routes,
+        @JsonProperty("calc_time_ms") long calcTimeMs,
+        @JsonProperty("k_effective") int kEffective,
+        @JsonProperty("overlap_matrix") double[][] overlapMatrix,
+        @JsonProperty("alternatives_status") String alternativesStatus) {
+    public static RouteResponse from(RoutePlanResult result) {
+        return new RouteResponse(result.routes().stream().map(RouteCandidateDto::from).toList(),
+                result.calcTimeMs(), result.kEffective(), result.overlapMatrix(), result.alternativesStatus());
+    }
 }
