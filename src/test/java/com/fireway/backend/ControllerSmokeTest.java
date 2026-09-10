@@ -10,12 +10,22 @@ import com.fireway.backend.modules.vehicles.interfaces.VehicleController;
 import com.fireway.backend.modules.scenarios.application.ScenarioService;
 import com.fireway.backend.modules.vehicles.application.VehicleService;
 import org.junit.jupiter.api.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class ControllerSmokeTest {
     MockMvc mvc;
-    @BeforeEach void setUp() { mvc = MockMvcBuilders.standaloneSetup(new ScenarioController(new ScenarioService(null)), new NoGoController(), new CctvController(), new VehicleController(new VehicleService(null)), new RouteController(new RouteService(null))).build(); }
+    // standaloneSetup 은 부트가 만들어준 Jackson 설정을 물려받지 않는다. application.yml 의
+    // property-naming-strategy: SNAKE_CASE 가 빠지므로, 여기서 직접 물리지 않으면 요청 본문의
+    // scenario_id 가 RouteRequest.scenarioId 에 바인딩되지 않고 @NotBlank 가 터져 400 이 난다.
+    // 테스트가 실제 API 계약(snake_case)을 그대로 쓰게 하려고 camelCase 로 바꾸지 않고 컨버터를 맞춘다.
+    private static MappingJackson2HttpMessageConverter snakeCaseJson() {
+        return new MappingJackson2HttpMessageConverter(new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE));
+    }
+    @BeforeEach void setUp() { mvc = MockMvcBuilders.standaloneSetup(new ScenarioController(new ScenarioService(null)), new NoGoController(), new CctvController(), new VehicleController(new VehicleService(null)), new RouteController(new RouteService(null))).setMessageConverters(snakeCaseJson()).build(); }
     @Test void scenarios() throws Exception { mvc.perform(get("/api/scenarios")).andExpect(status().isOk()); }
     @Test void noGo() throws Exception { mvc.perform(get("/api/no_go")).andExpect(status().isOk()); }
     @Test void cctv() throws Exception { mvc.perform(get("/api/cctv/cctv-01")).andExpect(status().isOk()); }
