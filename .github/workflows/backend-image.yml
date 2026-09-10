@@ -8,10 +8,57 @@ on:
     paths-ignore:
       - '**.md'
       - '.gitignore'
+  # PR에서도 돈다 — 단, 아래 test 잡만 실행되고 이미지 push/배포는 하지 않는다.
+  pull_request:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
   workflow_dispatch:
 
 jobs:
+  # ------------------------------------------------------------------
+  # 여태 CI는 테스트를 한 번도 돌린 적이 없다.
+  # Dockerfile 빌드가 `./gradlew bootJar -x test`라 이미지는 만들어져도
+  # 테스트는 통째로 건너뛴다. 그래서 테스트 소스셋이 컴파일조차 되지 않는
+  # 상태를 아무도 몰랐다 (d1c656c에서 발견).
+  #
+  # 지금은 "보이게만" 한다. 기존 실패 3건이 남아 있어서 지금 게이트로 걸면
+  # 예선 전에 배포가 막힌다. 빨간 X로 압박만 주고 배포는 계속 돌린다.
+  #
+  # TODO: 기존 실패 3건을 고친 뒤 build-and-push에 `needs: test`를 추가해
+  #       진짜 게이트로 승격시킬 것. 그게 이 잡의 최종 목적이다.
+  # ------------------------------------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: 테스트
+        run: |
+          chmod +x gradlew
+          ./gradlew test --no-daemon
+
+      - name: 테스트 리포트 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: build/reports/tests/test
+          if-no-files-found: ignore
+          retention-days: 7
+
   build-and-push:
+    # PR에서는 이미지를 올리지 않는다. main/develop 푸시에서만 돈다.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,6 +91,7 @@ jobs:
 
   deploy:
     needs: build-and-push
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
