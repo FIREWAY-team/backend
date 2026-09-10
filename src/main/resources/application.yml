@@ -21,6 +21,32 @@ app:
   external:
     fire-system-url: ${FIRE_SYSTEM_URL:mock://fire-system}
 
+  # ── 파일 저장소(S3) ──
+  # 버킷 이름을 코드에 박지 않는다. dev/prod 버킷을 나누거나 이름이 바뀌어도 코드는 안 건드린다.
+  # 실제 값은 서버의 ~/deploy/backend.env 에만 있다(backend.env.example 참고).
+  # 로컬은 비어 있어도 된다 — prod 프로파일이 아니면 LocalStorageAdapter가 대신 붙는다.
+  storage:
+    bucket: ${S3_BUCKET:}
+    region: ${AWS_REGION:ap-northeast-2}
+
+    # presigned URL 수명. 짧을수록 유출된 URL의 유효 시간이 짧다.
+    # 업로드는 사용자가 사진을 고르고 올리는 시간, 조회는 화면이 떠 있는 시간에 맞춘다.
+    presign-put-ttl: PT5M
+    presign-get-ttl: PT10M
+
+    # ⚠️ presigned PUT 자체에는 크기 제한을 걸 수 없다(SigV4 쿼리 서명에 Content-Length-Range 조건이 없다).
+    #    그래서 이 값은 "업로드를 막는 값"이 아니라 "업로드된 뒤 HEAD로 재보고 거부하는 값"이다.
+    #    FileUploadService.confirmUpload()가 초과분을 지우고 422를 던진다.
+    #
+    #    이건 남용 방지의 한 겹일 뿐이다. 발급 API 자체의 상한은 Nginx rate limit
+    #    (/api/files/upload-url, IP당 분당 5회)이 잡고, 그래도 쌓인 것은 S3 수명주기 규칙
+    #    (uploads/ 접두사 30일 만료)이 치운다. 셋 다 있어야 상한이 생긴다.
+    max-upload-bytes: 5242880   # 5MB — 신고 사진 기준
+
+    # 아래 둘은 로컬(prod 아님)에서만 쓰인다. build/ 아래라 .gitignore가 이미 걸러준다.
+    local-dir: build/local-storage
+    local-base-url: http://localhost:8080
+
 server:
   port: 8080
 

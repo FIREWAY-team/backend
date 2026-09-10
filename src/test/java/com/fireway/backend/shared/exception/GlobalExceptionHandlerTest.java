@@ -1,5 +1,6 @@
 package com.fireway.backend.shared.exception;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import org.junit.jupiter.api.*;
@@ -12,10 +13,11 @@ import org.springframework.web.bind.annotation.*;
 @WebMvcTest(controllers = GlobalExceptionHandlerTest.Probe.class)
 @Import(GlobalExceptionHandler.class)
 class GlobalExceptionHandlerTest {
-    MockMvc mvc;
     @org.springframework.beans.factory.annotation.Autowired MockMvc mvc;
     @Test void notFoundIs404() throws Exception { mvc.perform(get("/probe/404")).andExpect(status().isNotFound()).andExpect(jsonPath("$.error.code").value("NOT_FOUND")); }
     @Test void validationIs422() throws Exception { mvc.perform(get("/probe/422")).andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR")); }
+    @Test void unmappedPathIs404() throws Exception { mvc.perform(get("/이런경로는없다")).andExpect(status().isNotFound()).andExpect(jsonPath("$.error.code").value("NOT_FOUND")); }
+    @Test void wrongMethodIs405() throws Exception { mvc.perform(post("/probe/404")).andExpect(status().isMethodNotAllowed()).andExpect(jsonPath("$.error.code").value("METHOD_NOT_ALLOWED")); }
     @Test void unexpectedIs500() throws Exception { mvc.perform(get("/probe/500")).andExpect(status().isInternalServerError()).andExpect(jsonPath("$.error.code").value("INTERNAL_ERROR")); }
     @RestController @RequestMapping("/probe") static class Probe {
         @GetMapping("/404") String notFound() { throw new NotFoundException("missing"); }
