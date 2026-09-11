@@ -3,12 +3,13 @@ package com.fireway.backend.modules.routing.infrastructure;
 import com.fireway.backend.modules.routing.application.port.*;
 import com.fireway.backend.modules.routing.domain.RouteCandidate;
 import java.util.*;
-import org.springframework.context.annotation.*;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+// RealValhallaClient 가 @Profile("prod") 단일 선언이므로 non-prod 프로파일에서는 이 mock 만
+// 컨텍스트에 등록된다. @Primary 는 이중 등록 상황을 전제하는 어노테이션이라 제거.
 @Component
 @Profile("!prod")
-@Primary
 public class MockValhallaClient implements ValhallaClient {
     @Override
     public List<RouteCandidate> route(RoutePlanRequest request) {

@@ -25,7 +25,8 @@ class RouteControllerTest {
         var candidates = new GoldenTimePrioritizer().sort(RoutingTestFixtures.candidates(), 300);
         candidates.get(0).setExcludedReasons(List.of(new ExcludedReason("polygon-1", "폭 제한", "https://example.com/evidence")));
         when(planner.plan(any())).thenReturn(new RoutePlanResult(candidates, 12, 3,
-                new WeightedOverlapCalculator().matrix(candidates), "normal"));
+                new WeightedOverlapCalculator().matrix(candidates), "normal",
+                0, true, true, RoutingTestFixtures.VEHICLE));
         mvc.perform(post("/api/route").contentType("application/json").content("""
                 {"vehicle_id":"pump-3.5","from":{"lat":37.44,"lon":127.14},"to":{"lat":37.45,"lon":127.16}}
                 """))
@@ -43,7 +44,15 @@ class RouteControllerTest {
                 .andExpect(jsonPath("$.routes[0].polyline").isString())
                 .andExpect(jsonPath("$.routes[0].excluded_reasons[0].polygon_id").value("polygon-1"))
                 .andExpect(jsonPath("$.routes[0].excluded_reasons[0].evidence_url").value("https://example.com/evidence"))
-                .andExpect(jsonPath("$.calcTimeMs").doesNotExist());
+                .andExpect(jsonPath("$.calcTimeMs").doesNotExist())
+                // 신규 필드 검증: warnings + vehicle_used + no_go_considered.
+                .andExpect(jsonPath("$.no_go_considered").value(0))
+                .andExpect(jsonPath("$.vehicle_used.id").value("pump-3.5"))
+                .andExpect(jsonPath("$.vehicle_used.width_m").value(2.3))
+                .andExpect(jsonPath("$.vehicle_used.turning_radius_m").value(6.5))
+                .andExpect(jsonPath("$.warnings", hasSize(2)))
+                .andExpect(jsonPath("$.warnings[0]").value(org.hamcrest.Matchers.startsWith("valhalla_mock")))
+                .andExpect(jsonPath("$.warnings[1]").value(org.hamcrest.Matchers.startsWith("no_go_mock")));
         verify(planner).plan(RoutingTestFixtures.command());
     }
 
