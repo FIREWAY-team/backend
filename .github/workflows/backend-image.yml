@@ -106,13 +106,33 @@ jobs:
           role-to-assume: arn:aws:iam::136022486319:role/fire-dispatch-gha-deploy
           aws-region: ap-northeast-2
 
+      # 배포 스크립트는 서버가 아니라 이 리포에 있다 (deploy/deploy.sh).
+      # 서버는 매 배포마다 방금 빌드한 커밋으로 리포를 맞춘 뒤 그 스크립트를 돌린다.
+      # 이렇게 해야 실행되는 스크립트와 배포되는 이미지가 같은 커밋에서 나온다.
+      - name: SSM 파라미터 작성
+        run: |
+          cat > ssm-params.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "REPO=/home/ubuntu/deploy/backend",
+              "SHA=${{ github.sha }}",
+              "install -d -o ubuntu -g ubuntu /home/ubuntu/deploy",
+              "if [ -d \"$REPO/.git\" ]; then su - ubuntu -c \"git -C $REPO fetch --depth 1 origin $SHA\"; else su - ubuntu -c \"git clone --filter=blob:none --no-checkout https://github.com/FIREWAY-team/backend.git $REPO && git -C $REPO fetch --depth 1 origin $SHA\"; fi",
+              "su - ubuntu -c \"git -C $REPO reset --hard $SHA\"",
+              "su - ubuntu -c \"bash $REPO/deploy/deploy.sh\""
+            ]
+          }
+          JSON
+          cat ssm-params.json
+
       - name: SSM으로 서버에서 pull & 재기동
         run: |
           CMD_ID=$(aws ssm send-command \
             --instance-ids i-0a21fc6612d33c27a \
             --document-name AWS-RunShellScript \
             --comment "deploy ${{ github.sha }}" \
-            --parameters 'commands=["su - ubuntu -c /home/ubuntu/deploy/deploy.sh"]' \
+            --parameters file://ssm-params.json \
             --query Command.CommandId --output text)
           echo "CommandId: $CMD_ID"
 
