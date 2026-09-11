@@ -13,49 +13,54 @@
 
 ## 파일
 
-| 파일 | 서버 위치 |
-|---|---|
-| `deploy.sh` | `~/deploy/backend/deploy/deploy.sh` (리포 클론 안) |
-| `docker-compose.prod.yml` | `~/deploy/docker-compose.yml` |
+| 파일 | 서버 위치 | 정본인가 |
+|---|---|---|
+| `deploy.sh` | `~/deploy/backend/deploy/deploy.sh` | **그렇다.** 배포가 이걸 실행한다 |
+| `docker-compose.prod.yml` | `~/deploy/docker-compose.yml` | 아니다. 서버 파일의 거울 |
 
-서버에만 있고 리포에 없는 것: **`~/deploy/backend.env`**.
-실제 DB 비밀번호가 들어 있어 깃에 절대 넣지 않는다 (`chmod 600`).
-형식은 리포 루트의 `backend.env.example` 참고.
+`deploy.sh` 는 정본이다. 워크플로의 SSM 명령이 매 배포마다 이 리포를
+`github.sha` 로 맞춘 뒤 `deploy/deploy.sh` 를 실행한다.
 
-## 서버 전환 절차 (한 번만)
+`docker-compose.prod.yml` 은 아직 거울이다. `deploy.sh` 가 `COMPOSE_FILE`
+기본값으로 `~/deploy/docker-compose.yml` 을 읽기 때문에, 배포는 여전히
+서버 파일을 쓴다. **서버 compose 를 고치면 이 파일도 같이 고칠 것.**
 
-서버에서:
+서버 compose 에는 `backend` 와 `frontend` 가 같이 들어 있다.
+프론트는 `BACKEND_API_URL: http://backend:8080` 으로 compose 네트워크의
+서비스 이름을 통해 백엔드에 붙는다 (127.0.0.1 이 아니다).
 
-```
-cd ~/deploy
-git clone https://github.com/FIREWAY-team/backend.git
-```
+서버에만 있고 리포에 없는 것:
 
-기존 `~/deploy/deploy.sh` 와 이 리포의 `deploy/deploy.sh` 를 **먼저 비교한다.**
+- **`~/deploy/backend.env`** — 실제 DB 비밀번호가 들어 있다. 깃에 절대 넣지
+  않는다 (`chmod 600`). 형식은 리포 루트의 `backend.env.example` 참고
+- **`~/deploy/deploy-frontend.sh`** — 프론트 배포 스크립트. 이 리포 소관이
+  아니라 옮기지 않았다. 프론트 리포로 옮기는 게 맞다
+- `~/deploy/docker-compose.yml.bak` — 예전 백업
 
-```
-diff ~/deploy/deploy.sh ~/deploy/backend/deploy/deploy.sh
-```
+## 배포가 도는 방식
 
-리포 쪽 스크립트는 서버 실물을 못 본 상태에서 README의 수동 배포 절차를 근거로
-다시 쓴 것이다. 서버 쪽에만 있는 단계(마이그레이션, 알림, 백업 등)가 있으면
-리포 쪽에 반영한 뒤에 전환할 것.
-
-compose 파일도 같은 방식으로 비교한다.
+`main` / `develop` 에 머지되면 워크플로가 이 순서로 돈다.
 
 ```
-diff ~/deploy/docker-compose.yml ~/deploy/backend/deploy/docker-compose.prod.yml
+test  ->  build-and-push (GHCR)  ->  deploy (SSM)
 ```
 
-둘 다 확인됐으면 워크플로의 SSM 명령을 바꾼다.
+`deploy` 잡은 SSM 으로 서버에서 이걸 실행한다.
 
 ```
-# 지금
-commands=["su - ubuntu -c /home/ubuntu/deploy/deploy.sh"]
-
-# 전환 후
-commands=["su - ubuntu -c 'git -C /home/ubuntu/deploy/backend pull --ff-only && bash /home/ubuntu/deploy/backend/deploy/deploy.sh'"]
+REPO=/home/ubuntu/deploy/backend
+SHA=<github.sha>
+# 클론이 없으면 클론하고, 있으면 해당 커밋을 받아온다
+git -C $REPO reset --hard $SHA
+bash $REPO/deploy/deploy.sh
 ```
+
+`latest` 가 아니라 커밋 SHA 로 맞춘다. 실행되는 스크립트와 배포되는 이미지가
+같은 커밋에서 나온다.
+
+주의: SSM 의 `AWS-RunShellScript` 는 명령을 bash 가 아니라 `/bin/sh`(dash)로
+돌린다. 워크플로의 `commands` 배열에는 bash 전용 문법(`pipefail` 등)을
+쓸 수 없다. `deploy.sh` 는 `bash` 로 명시해 실행하므로 그 안에서는 상관없다.
 
 ## 지금 무중단이 아니다
 

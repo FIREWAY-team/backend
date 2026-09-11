@@ -1,10 +1,16 @@
-# 서버(EC2 t3.micro)의 ~/deploy/docker-compose.yml 에 해당하는 파일.
+# 서버(EC2 t3.micro)의 ~/deploy/docker-compose.yml 을 그대로 옮긴 사본이다.
 #
 # 리포 루트의 docker-compose.yml 과 혼동하지 말 것.
 #   루트     = 로컬 개발용 MySQL
-#   이 파일  = 운영 백엔드 컨테이너
+#   이 파일  = 운영 컨테이너 (backend + frontend)
+#
+# 아직 정본이 아니다. 배포는 서버의 ~/deploy/docker-compose.yml 을 읽는다.
+# deploy.sh 가 COMPOSE_FILE 기본값으로 그 경로를 쓰기 때문이다.
+# 이 파일은 서버에 뭐가 떠 있는지 리포에서 볼 수 있게 맞춰둔 거울이다.
+# 서버 파일을 고치면 이 파일도 같이 고칠 것.
 #
 # 이미지는 서버에서 빌드하지 않는다. Actions가 GHCR에 올린 것을 pull 만 한다.
+# 램이 1GB뿐이라 서버에서 build 를 돌리면 다른 컨테이너가 OOM 으로 죽는다.
 
 services:
   backend:
@@ -21,12 +27,36 @@ services:
     env_file:
       - ./backend.env
 
-    # 램이 1GB뿐이다. 백엔드가 다 먹고 다른 프로세스를 죽이지 않게 묶어둔다.
-    # 컨테이너 실사용 = 힙(384m) + 메타스페이스 + 스레드 스택이라 늘 384m보다 크다.
-    mem_limit: 700m
+  frontend:
+    image: ghcr.io/fireway-team/frontend:latest
+    container_name: frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
 
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    # 컨테이너 사이 통신은 compose 네트워크의 서비스 이름으로 간다.
+    # 127.0.0.1:8080 이 아니라 backend:8080 이다.
+    environment:
+      BACKEND_API_URL: http://backend:8080
+
+    # 기동 순서만 보장한다. backend 가 "준비됐는지"까지 기다리지는 않는다.
+    depends_on:
+      - backend
+
+# ------------------------------------------------------------------
+# 아직 서버에 넣지 않은 것 — 넣으려면 서버 파일도 같이 고쳐야 한다.
+#
+# 램이 1GB라 한 컨테이너가 다 먹으면 다른 쪽이 OOM 으로 죽는다.
+# 백엔드 컨테이너 실사용은 힙(-Xmx384m) + 메타스페이스 + 스레드 스택이라
+# 늘 384m 보다 크다.
+#
+#   backend:
+#     mem_limit: 700m
+#     logging:
+#       driver: json-file
+#       options:
+#         max-size: "10m"
+#         max-file: "3"
+#
+# 로그 로테이션이 없으면 json-file 로그가 무한히 쌓여 디스크를 채운다.
+# ------------------------------------------------------------------
