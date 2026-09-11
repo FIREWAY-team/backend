@@ -1,14 +1,14 @@
 # 배포
 
 서버에만 있던 배포 파일들을 리포로 옮긴 것이다.
-여기 있는 것이 정본이고, 서버는 이걸 받아서 쓴다.
+`deploy.sh` 는 여기 있는 것이 정본이고, 서버는 매 배포마다 이걸 받아서 쓴다.
 
 ## 왜 옮겼나
 
-전에는 `deploy.sh` 와 운영 `docker-compose.yml` 이 EC2의 `~/deploy/` 에만 있었다.
+전에는 `deploy.sh` 와 운영 `docker-compose.yml` 이 EC2 의 `~/deploy/` 에만 있었다.
 
 - 버전 관리가 안 됐다. 누가 언제 뭘 바꿨는지 기록이 없다
-- 리뷰를 못 했다. 배포 방식 변경이 PR에 안 잡혔다
+- 리뷰를 못 했다. 배포 방식 변경이 PR 에 안 잡혔다
 - 서버가 날아가면 배포 방식도 같이 사라졌다
 
 ## 파일
@@ -16,18 +16,8 @@
 | 파일 | 서버 위치 | 정본인가 |
 |---|---|---|
 | `deploy.sh` | `~/deploy/backend/deploy/deploy.sh` | **그렇다.** 배포가 이걸 실행한다 |
+| `setup-bluegreen.sh` | 같음 | 한 번만 돌리는 전환 스크립트 |
 | `docker-compose.prod.yml` | `~/deploy/docker-compose.yml` | 아니다. 서버 파일의 거울 |
-
-`deploy.sh` 는 정본이다. 워크플로의 SSM 명령이 매 배포마다 이 리포를
-`github.sha` 로 맞춘 뒤 `deploy/deploy.sh` 를 실행한다.
-
-`docker-compose.prod.yml` 은 아직 거울이다. `deploy.sh` 가 `COMPOSE_FILE`
-기본값으로 `~/deploy/docker-compose.yml` 을 읽기 때문에, 배포는 여전히
-서버 파일을 쓴다. **서버 compose 를 고치면 이 파일도 같이 고칠 것.**
-
-서버 compose 에는 `backend` 와 `frontend` 가 같이 들어 있다.
-프론트는 `BACKEND_API_URL: http://backend:8080` 으로 compose 네트워크의
-서비스 이름을 통해 백엔드에 붙는다 (127.0.0.1 이 아니다).
 
 서버에만 있고 리포에 없는 것:
 
@@ -35,7 +25,6 @@
   않는다 (`chmod 600`). 형식은 리포 루트의 `backend.env.example` 참고
 - **`~/deploy/deploy-frontend.sh`** — 프론트 배포 스크립트. 이 리포 소관이
   아니라 옮기지 않았다. 프론트 리포로 옮기는 게 맞다
-- `~/deploy/docker-compose.yml.bak` — 예전 백업
 
 ## 배포가 도는 방식
 
@@ -62,16 +51,68 @@ bash $REPO/deploy/deploy.sh
 돌린다. 워크플로의 `commands` 배열에는 bash 전용 문법(`pipefail` 등)을
 쓸 수 없다. `deploy.sh` 는 `bash` 로 명시해 실행하므로 그 안에서는 상관없다.
 
-## 지금 무중단이 아니다
+## 무중단 — 블루-그린
 
-`deploy.sh` 의 `docker compose up -d` 는 기존 컨테이너를 내리고 새로 띄운다.
-그 사이 수 초간 502가 난다.
+컨테이너 두 개를 번갈아 쓴다.
 
-1GB 램에서 블루그린을 하려면 컨테이너 두 개가 잠깐 같이 떠 있어야 하는데,
-컨테이너당 실사용이 500~600MB라 그대로는 안 들어간다. 선택지는 셋이다.
+| | 컨테이너 | 포트 |
+|---|---|---|
+| blue | `backend-blue` | `127.0.0.1:8081` |
+| green | `backend-green` | `127.0.0.1:8082` |
 
-- Nginx `proxy_next_upstream` + 재시도로 교체 순간을 덮는다 (체감 무중단)
-- 힙을 256m 으로 낮춰 잠깐 두 개를 띄운다 (GC 압박이 커진다)
-- t3.small(2GB)로 올린다 (가장 확실하고, 돈이 든다)
+평소에는 한 쪽만 떠 있고, 배포할 때만 30초 남짓 둘 다 떠 있다.
 
-별도 작업으로 다룬다.
+**트래픽 경로가 둘이라 각각 다르게 처리한다.**
+
+- **외부** (nginx -> backend): `/etc/nginx/conf.d/backend-upstream.conf` 의
+  `upstream backend_active` 를 새 포트로 바꾸고 `nginx -s reload`.
+  reload 는 기존 연결을 끊지 않는다
+- **내부** (frontend -> backend): compose 네트워크 **별칭**.
+  blue 와 green 둘 다 `backend` 라는 별칭을 갖는다. frontend 는 예전처럼
+  `http://backend:8080` 으로 부르면 되고, 옛 컨테이너가 내려가면 별칭은
+  새 쪽만 가리킨다. **frontend 설정은 건드릴 필요가 없다**
+
+순서:
+
+```
+1. idle 색으로 새 이미지 기동        (active 는 계속 서비스 중)
+2. idle 헬스체크 UP 까지 대기
+3. nginx upstream 을 idle 로 교체 + reload
+4. 외부에서 https 로 다시 확인
+5. 옛 active 내림
+```
+
+어느 단계에서 실패하든 **서비스 중인 색은 건드리지 않는다.** 새로 띄운 쪽만
+정리하고 끝난다. 다운타임이 생기지 않는다. nginx 설정 검사나 전환 후 외부
+헬스체크가 실패하면 upstream 을 원래대로 되돌린다.
+
+### 메모리
+
+t3.micro 는 램이 1GB 다. 교체 중에는 백엔드 컨테이너가 두 개 뜬다.
+
+```
+backend   214MB   (실측)
+frontend    8MB
+스왑      2GB     (이미 붙어 있음)
+```
+
+두 개여도 430MB 남짓이라 들어간다. 각 컨테이너에 `mem_limit: 700m` 을 걸어
+한 쪽이 폭주해도 다른 쪽을 죽이지 못하게 했다.
+
+### 전환 (한 번만)
+
+서버에서 `setup-bluegreen.sh` 를 한 번 돌려야 한다. 그 전에는 `deploy.sh` 가
+`backend-upstream.conf` 가 없다고 명확히 실패한다 (서비스에는 영향 없음).
+
+```
+cd /home/ubuntu/deploy/backend
+sudo git fetch origin feat/zero-downtime-bluegreen
+sudo git checkout FETCH_HEAD
+sudo bash deploy/setup-bluegreen.sh
+```
+
+전환 스크립트도 다운타임 없이 간다. blue 를 먼저 띄우고, health 확인하고,
+nginx 를 blue 로 돌린 다음에야 옛 `backend` 컨테이너를 내린다.
+
+실패하면 nginx 설정(`/root/nginx-backup-*.tar.gz`)과 compose
+(`docker-compose.yml.bak.*`)를 원래대로 되돌린다.

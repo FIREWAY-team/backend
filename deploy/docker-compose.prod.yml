@@ -1,31 +1,66 @@
-# 서버(EC2 t3.micro)의 ~/deploy/docker-compose.yml 을 그대로 옮긴 사본이다.
+# 서버(EC2 t3.micro)의 ~/deploy/docker-compose.yml 과 같아야 하는 파일이다.
 #
 # 리포 루트의 docker-compose.yml 과 혼동하지 말 것.
 #   루트     = 로컬 개발용 MySQL
-#   이 파일  = 운영 컨테이너 (backend + frontend)
-#
-# 아직 정본이 아니다. 배포는 서버의 ~/deploy/docker-compose.yml 을 읽는다.
-# deploy.sh 가 COMPOSE_FILE 기본값으로 그 경로를 쓰기 때문이다.
-# 이 파일은 서버에 뭐가 떠 있는지 리포에서 볼 수 있게 맞춰둔 거울이다.
-# 서버 파일을 고치면 이 파일도 같이 고칠 것.
+#   이 파일  = 운영 컨테이너 (backend blue/green + frontend)
 #
 # 이미지는 서버에서 빌드하지 않는다. Actions가 GHCR에 올린 것을 pull 만 한다.
 # 램이 1GB뿐이라 서버에서 build 를 돌리면 다른 컨테이너가 OOM 으로 죽는다.
+#
+# ------------------------------------------------------------------
+# 블루-그린
+#
+# backend-blue 와 backend-green 은 같은 이미지를 쓰는 같은 서비스다.
+# 평소에는 둘 중 하나만 떠 있고, 배포할 때만 30초 남짓 둘 다 떠 있다.
+#
+# 둘 다 네트워크 별칭 `backend` 를 갖는다. frontend 는 예전처럼
+# http://backend:8080 으로 부르면 되고, 교체 중에는 둘 중 살아있는 쪽으로
+# 간다. 옛 컨테이너가 내려가면 별칭은 새 쪽만 가리킨다.
+# 그래서 frontend 설정은 건드릴 필요가 없다.
+#
+# 외부 트래픽은 nginx 가 upstream 파일을 바꿔 끊는다.
+#   /etc/nginx/conf.d/backend-upstream.conf
+# ------------------------------------------------------------------
 
 services:
-  backend:
+  backend-blue:
     image: ghcr.io/fireway-team/backend:latest
-    container_name: backend
+    container_name: backend-blue
     restart: unless-stopped
-
-    # 외부에 직접 열지 않는다. Nginx만 이 포트로 들어온다.
     ports:
-      - "127.0.0.1:8080:8080"
-
-    # 실제 값은 서버의 ~/deploy/backend.env 에만 있다 (chmod 600, 깃에 없음).
-    # 형식은 리포 루트의 backend.env.example 참고.
+      - "127.0.0.1:8081:8080"
     env_file:
       - ./backend.env
+    networks:
+      default:
+        aliases:
+          - backend
+    # 램이 1GB다. 교체할 때 두 개가 같이 뜨므로 한쪽이 다 먹으면 안 된다.
+    mem_limit: 700m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend-green:
+    image: ghcr.io/fireway-team/backend:latest
+    container_name: backend-green
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:8080"
+    env_file:
+      - ./backend.env
+    networks:
+      default:
+        aliases:
+          - backend
+    mem_limit: 700m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     image: ghcr.io/fireway-team/frontend:latest
@@ -33,30 +68,16 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
-
-    # 컨테이너 사이 통신은 compose 네트워크의 서비스 이름으로 간다.
-    # 127.0.0.1:8080 이 아니라 backend:8080 이다.
+    # 별칭 `backend` 로 붙는다. 어느 색이 떠 있든 상관없다.
     environment:
       BACKEND_API_URL: http://backend:8080
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # depends_on 을 뺐다. blue/green 중 무엇이 활성인지 compose 는 모른다.
+    # frontend 는 backend 와 무관하게 계속 떠 있어야 한다.
 
-    # 기동 순서만 보장한다. backend 가 "준비됐는지"까지 기다리지는 않는다.
-    depends_on:
-      - backend
-
-# ------------------------------------------------------------------
-# 아직 서버에 넣지 않은 것 — 넣으려면 서버 파일도 같이 고쳐야 한다.
-#
-# 램이 1GB라 한 컨테이너가 다 먹으면 다른 쪽이 OOM 으로 죽는다.
-# 백엔드 컨테이너 실사용은 힙(-Xmx384m) + 메타스페이스 + 스레드 스택이라
-# 늘 384m 보다 크다.
-#
-#   backend:
-#     mem_limit: 700m
-#     logging:
-#       driver: json-file
-#       options:
-#         max-size: "10m"
-#         max-file: "3"
-#
-# 로그 로테이션이 없으면 json-file 로그가 무한히 쌓여 디스크를 채운다.
-# ------------------------------------------------------------------
+networks:
+  default:
