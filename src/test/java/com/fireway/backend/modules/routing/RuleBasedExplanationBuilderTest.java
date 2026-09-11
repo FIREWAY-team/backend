@@ -15,7 +15,7 @@ class RuleBasedExplanationBuilderTest {
         route.setPassableProb(0.87);
         var builder = new RuleBasedExplanationBuilder();
         assertThat(builder.build(route, RoutingTestFixtures.VEHICLE, 300))
-                .contains("2순위", "280초", "골든타임 5분 이내", "1건 우회", "87%", "펌프차 3.5톤", "2.1m");
+                .contains("2순위", "280초", "골든타임 5분 이내", "1건 우회", "87%", "소형펌프차", "2.3m");
         assertThat(builder.build(route, RoutingTestFixtures.VEHICLE, 400)).contains("골든타임 400초 이내");
     }
 }

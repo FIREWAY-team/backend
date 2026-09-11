@@ -6,6 +6,8 @@ import com.fireway.backend.modules.routing.domain.RouteCandidate;
 import com.fireway.backend.shared.exception.ExternalSystemException;
 import java.time.Duration;
 import java.util.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
@@ -15,6 +17,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 @Component
 @Profile("prod")
 public class RealValhallaClient implements ValhallaClient {
+    private static final Logger log = LoggerFactory.getLogger(RealValhallaClient.class);
     private final WebClient client;
 
     public RealValhallaClient(WebClient.Builder builder, @Value("${VALHALLA_URL}") String url) {
@@ -49,6 +52,8 @@ public class RealValhallaClient implements ValhallaClient {
             }
             return candidates;
         } catch (RuntimeException error) {
+            // ExternalSystemException 은 sealed 계층상 cause 미지원 — 로그로 근본 원인 보존.
+            log.warn("Valhalla 경로 조회 실패: {}", error.getMessage(), error);
             throw new ExternalSystemException("Valhalla 경로 조회에 실패했습니다.");
         }
     }

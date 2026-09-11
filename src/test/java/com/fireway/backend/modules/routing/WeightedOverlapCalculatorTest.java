@@ -32,4 +32,12 @@ class WeightedOverlapCalculatorTest {
         assertThat(calculator.filter(List.of(duplicate, disjoint, first), 0.65)).containsExactly(first, disjoint);
         assertThat(calculator.filter(List.of(first, duplicate), 1.0)).containsExactly(first, duplicate);
     }
+
+    @Test
+    void overlap_is_direction_invariant() {
+        // 같은 도로 세그먼트를 반대 방향으로 지나가도 overlap 1.0 이어야 함.
+        var forward = RoutingTestFixtures.candidate(1, 200, a, b, c);
+        var reverse = RoutingTestFixtures.candidate(2, 280, c, b, a);
+        assertThat(calculator.overlap(forward, reverse)).isEqualTo(1.0);
+    }
 }

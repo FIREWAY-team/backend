@@ -43,11 +43,18 @@ public class WeightedOverlapCalculator {
         Map<String, Double> segments = new HashMap<>();
         for (int i = 1; i < coordinates.size(); i++) {
             double[] a = coordinates.get(i - 1), b = coordinates.get(i);
-            String key = String.format(Locale.ROOT, "%.5f,%.5f|%.5f,%.5f", a[0], a[1], b[0], b[1]);
+            // Direction-invariant key: 같은 도로 세그먼트를 반대 방향으로 지나가도 같은 키로 인식되게.
+            String key = normalizeSegmentKey(a, b);
             double lat = Math.toRadians((a[1] + b[1]) / 2);
             double length = 111_320 * Math.hypot((b[0] - a[0]) * Math.cos(lat), b[1] - a[1]);
             segments.merge(key, length, Double::sum);
         }
         return segments;
+    }
+
+    private String normalizeSegmentKey(double[] a, double[] b) {
+        String endA = String.format(Locale.ROOT, "%.5f,%.5f", a[0], a[1]);
+        String endB = String.format(Locale.ROOT, "%.5f,%.5f", b[0], b[1]);
+        return endA.compareTo(endB) <= 0 ? endA + "|" + endB : endB + "|" + endA;
     }
 }

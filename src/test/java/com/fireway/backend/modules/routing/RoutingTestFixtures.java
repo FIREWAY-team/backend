@@ -10,7 +10,7 @@ import java.util.List;
 final class RoutingTestFixtures {
     static final Coordinate FROM = new Coordinate(37.44, 127.14);
     static final Coordinate TO = new Coordinate(37.45, 127.16);
-    static final Vehicle VEHICLE = new Vehicle("pump-3.5", "펌프차 3.5톤", 2.1, 2.8, 6.5, 3.5, 8);
+    static final Vehicle VEHICLE = new Vehicle("pump-3.5", "소형펌프차", 2.3, 3.0, 7.0, 3.5, 6.5);
     static RoutePlanningCommand command() { return new RoutePlanningCommand(VEHICLE.vehicleId(), FROM, TO, 3, 0.65, 300); }
     static List<RouteCandidate> candidates() {
         return new MockValhallaClient().route(new RoutePlanRequest(FROM, TO, VEHICLE, List.of(), 3));
