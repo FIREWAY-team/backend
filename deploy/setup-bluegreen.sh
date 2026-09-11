@@ -19,12 +19,27 @@ DEPLOY_DIR="${DEPLOY_DIR:-/home/ubuntu/deploy}"
 COMPOSE_FILE="$DEPLOY_DIR/docker-compose.yml"
 REPO_COMPOSE="${REPO_COMPOSE:-$DEPLOY_DIR/backend/deploy/docker-compose.prod.yml}"
 UPSTREAM_CONF="/etc/nginx/conf.d/backend-upstream.conf"
+# 이 스크립트는 root 로 돌아야 한다(스왑/nginx). 하지만 docker 레지스트리
+# 자격증명은 계정별(~/.docker/config.json)이고 GHCR 로그인은 ubuntu 에만 있다.
+# 그래서 docker compose 만 ubuntu 로 돌린다. 배포(deploy.sh)도 ubuntu 로 돈다.
+APP_USER="${APP_USER:-ubuntu}"
 NGINX_DIRS="/etc/nginx/sites-enabled /etc/nginx/conf.d"
 BLUE_PORT=8081
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 [ "$(id -u)" -eq 0 ] || { echo "root 로 실행할 것: sudo bash $0" >&2; exit 1; }
 [ -f "$REPO_COMPOSE" ] || { echo "$REPO_COMPOSE 가 없다. 리포가 최신인지 확인할 것." >&2; exit 1; }
+id "$APP_USER" >/dev/null 2>&1 || { echo "$APP_USER 계정이 없다" >&2; exit 1; }
+
+# ubuntu 로 도는 docker compose
+dcu() { sudo -u "$APP_USER" docker compose -f "$COMPOSE_FILE" "$@"; }
+
+# GHCR 로그인이 ubuntu 에 있는지 미리 본다. 없으면 pull 이 unauthorized 로 죽는다.
+if ! sudo -u "$APP_USER" test -s "$(getent passwd "$APP_USER" | cut -d: -f6)/.docker/config.json"; then
+  echo "경고: $APP_USER 에 docker 자격증명이 안 보인다." >&2
+  echo "      GHCR 이미지가 private 이면 pull 이 unauthorized 로 실패한다." >&2
+  echo "      그 경우: sudo -u $APP_USER docker login ghcr.io" >&2
+fi
 
 echo "=== 0. 스왑 확인 ==="
 if swapon --show | grep -q .; then
@@ -63,8 +78,8 @@ cp -a "$REPO_COMPOSE" "$COMPOSE_FILE"
 
 echo "=== 3. backend-blue 기동 (옛 backend 는 계속 서비스 중) ==="
 cd "$DEPLOY_DIR"
-docker compose pull backend-blue
-docker compose up -d backend-blue
+dcu pull backend-blue
+dcu up -d backend-blue
 
 echo "=== 4. backend-blue 헬스체크 ==="
 ok=no
@@ -75,7 +90,7 @@ for i in $(seq 1 45); do
   fi
   sleep 2
 done
-[ "$ok" = yes ] || { docker compose logs --tail 80 backend-blue >&2; false; }
+[ "$ok" = yes ] || { dcu logs --tail 80 backend-blue >&2; false; }
 
 echo "=== 5. nginx upstream 추가 + proxy_pass 교체 ==="
 printf 'upstream backend_active {\n    server 127.0.0.1:%s;\n}\n' "$BLUE_PORT" > "$UPSTREAM_CONF"
