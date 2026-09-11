@@ -1,0 +1,32 @@
+# 서버(EC2 t3.micro)의 ~/deploy/docker-compose.yml 에 해당하는 파일.
+#
+# 리포 루트의 docker-compose.yml 과 혼동하지 말 것.
+#   루트     = 로컬 개발용 MySQL
+#   이 파일  = 운영 백엔드 컨테이너
+#
+# 이미지는 서버에서 빌드하지 않는다. Actions가 GHCR에 올린 것을 pull 만 한다.
+
+services:
+  backend:
+    image: ghcr.io/fireway-team/backend:latest
+    container_name: backend
+    restart: unless-stopped
+
+    # 외부에 직접 열지 않는다. Nginx만 이 포트로 들어온다.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    # 실제 값은 서버의 ~/deploy/backend.env 에만 있다 (chmod 600, 깃에 없음).
+    # 형식은 리포 루트의 backend.env.example 참고.
+    env_file:
+      - ./backend.env
+
+    # 램이 1GB뿐이다. 백엔드가 다 먹고 다른 프로세스를 죽이지 않게 묶어둔다.
+    # 컨테이너 실사용 = 힙(384m) + 메타스페이스 + 스레드 스택이라 늘 384m보다 크다.
+    mem_limit: 700m
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
