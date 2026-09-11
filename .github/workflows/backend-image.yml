@@ -1,7 +1,8 @@
 name: backend-image
 
-# main / develop 에 머지되면 이미지를 만들어 GHCR에 올린다.
-# 서버 배포는 아직 수동이다 (SSH가 집 IP로 제한돼 있어서).
+# main / develop 에 머지되면 테스트 -> 이미지 빌드(GHCR) -> 서버 배포까지 자동으로 간다.
+# 배포는 SSM send-command로 EC2의 ~/deploy/deploy.sh 를 실행한다.
+# SSH가 아니라 SSM인 이유: SSH는 집 IP로 제한돼 있어 Actions 러너가 못 들어온다.
 on:
   push:
     branches: [main, develop]
@@ -18,16 +19,15 @@ on:
 
 jobs:
   # ------------------------------------------------------------------
-  # 여태 CI는 테스트를 한 번도 돌린 적이 없다.
-  # Dockerfile 빌드가 `./gradlew bootJar -x test`라 이미지는 만들어져도
-  # 테스트는 통째로 건너뛴다. 그래서 테스트 소스셋이 컴파일조차 되지 않는
-  # 상태를 아무도 몰랐다 (d1c656c에서 발견).
+  # Dockerfile이 `./gradlew bootJar -x test`로 빌드하므로 이미지 빌드만으로는
+  # 테스트가 통째로 건너뛰어진다. 그래서 테스트는 이 잡에서 따로 돌린다.
   #
-  # 지금은 "보이게만" 한다. 기존 실패 3건이 남아 있어서 지금 게이트로 걸면
-  # 예선 전에 배포가 막힌다. 빨간 X로 압박만 주고 배포는 계속 돌린다.
+  # 이 잡은 이제 게이트다. build-and-push가 `needs: test`로 물려 있어서
+  # 테스트가 깨지면 이미지도 안 만들어지고 배포도 안 나간다.
   #
-  # TODO: 기존 실패 3건을 고친 뒤 build-and-push에 `needs: test`를 추가해
-  #       진짜 게이트로 승격시킬 것. 그게 이 잡의 최종 목적이다.
+  # 승격 전에는 test가 빨간 X여도 배포가 그대로 나갔다.
+  # 실제로 run 34443799596 / 34443407283 (2026-09-10, main)에서
+  # test: failure 인데 deploy: success 로 운영에 올라갔다.
   # ------------------------------------------------------------------
   test:
     runs-on: ubuntu-latest
@@ -57,6 +57,9 @@ jobs:
           retention-days: 7
 
   build-and-push:
+    # 테스트가 통과해야만 이미지를 만든다. deploy는 build-and-push에 물려 있으므로
+    # test -> build-and-push -> deploy 가 한 줄로 이어진다.
+    needs: test
     # PR에서는 이미지를 올리지 않는다. main/develop 푸시에서만 돈다.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
