@@ -96,10 +96,34 @@ echo "=== 5. nginx upstream 추가 + proxy_pass 교체 ==="
 printf 'upstream backend_active {\n    server 127.0.0.1:%s;\n}\n' "$BLUE_PORT" > "$UPSTREAM_CONF"
 
 # 백엔드로 가던 proxy_pass 만 바꾼다. 프론트(3000)는 건드리지 않는다.
-HITS=$(grep -rl 'proxy_pass http://127\.0\.0\.1:8080' $NGINX_DIRS 2>/dev/null || true)
-[ -n "$HITS" ] || { echo "  proxy_pass 8080 을 못 찾았다" >&2; false; }
-echo "$HITS" | while read -r f; do
-  [ -n "$f" ] || continue
+#
+# 어느 파일을 고칠지는 nginx 자신에게 묻는다. nginx -T 가 실제로 읽는
+# 설정 파일 경로를 전부 찍어준다. sites-enabled 를 grep -r 로 뒤지면
+# 심볼릭 링크를 안 따라가서 놓친다.
+CONF_FILES="$(nginx -T 2>/dev/null | sed -n 's|^# configuration file \(.*\):$|\1|p' | sort -u)"
+[ -n "$CONF_FILES" ] || CONF_FILES="$(find $NGINX_DIRS -type f -o -type l 2>/dev/null)"
+
+# sed -i 를 심볼릭 링크에 걸면 링크가 일반 파일로 바뀐다.
+# readlink -f 로 실체 경로를 구하고 중복을 없앤다.
+HITS=""
+for f in $CONF_FILES; do
+  [ -r "$f" ] || continue
+  if grep -q 'proxy_pass http://127\.0\.0\.1:8080' "$f" 2>/dev/null; then
+    HITS="$HITS$(readlink -f "$f")\n"
+  fi
+done
+HITS="$(printf '%b' "$HITS" | sed '/^$/d' | sort -u)"
+
+if [ -z "$HITS" ]; then
+  echo "  proxy_pass http://127.0.0.1:8080 을 어느 설정 파일에서도 못 찾았다" >&2
+  echo "  nginx 가 읽는 파일들:" >&2
+  printf '%s\n' $CONF_FILES | sed 's|^|    |' >&2
+  echo "  실제 proxy_pass 줄:" >&2
+  nginx -T 2>/dev/null | grep -n 'proxy_pass' | sed 's|^|    |' >&2
+  false
+fi
+
+for f in $HITS; do
   sed -i 's|proxy_pass http://127\.0\.0\.1:8080|proxy_pass http://backend_active|g' "$f"
   echo "  고침: $f"
 done
