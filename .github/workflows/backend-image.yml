@@ -1,9 +1,16 @@
 name: backend-image
 
-# main / develop 에 머지되면 이미지를 만들어 GHCR에 올린다.
-# 서버 배포는 아직 수동이다 (SSH가 집 IP로 제한돼 있어서).
+# main / develop 에 머지되면 테스트 -> 이미지 빌드(GHCR) -> 서버 배포까지 자동으로 간다.
+# 배포는 SSM send-command로 EC2의 ~/deploy/deploy.sh 를 실행한다.
+# SSH가 아니라 SSM인 이유: SSH는 집 IP로 제한돼 있어 Actions 러너가 못 들어온다.
 on:
   push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  # PR에서도 돈다 — 단, 아래 test 잡만 실행되고 이미지 push/배포는 하지 않는다.
+  pull_request:
     branches: [main, develop]
     paths-ignore:
       - '**.md'
@@ -11,7 +18,50 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ------------------------------------------------------------------
+  # Dockerfile이 `./gradlew bootJar -x test`로 빌드하므로 이미지 빌드만으로는
+  # 테스트가 통째로 건너뛰어진다. 그래서 테스트는 이 잡에서 따로 돌린다.
+  #
+  # 이 잡은 이제 게이트다. build-and-push가 `needs: test`로 물려 있어서
+  # 테스트가 깨지면 이미지도 안 만들어지고 배포도 안 나간다.
+  #
+  # 승격 전에는 test가 빨간 X여도 배포가 그대로 나갔다.
+  # 실제로 run 34443799596 / 34443407283 (2026-09-10, main)에서
+  # test: failure 인데 deploy: success 로 운영에 올라갔다.
+  # ------------------------------------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: 테스트
+        run: |
+          chmod +x gradlew
+          ./gradlew test --no-daemon
+
+      - name: 테스트 리포트 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: build/reports/tests/test
+          if-no-files-found: ignore
+          retention-days: 7
+
   build-and-push:
+    # 테스트가 통과해야만 이미지를 만든다. deploy는 build-and-push에 물려 있으므로
+    # test -> build-and-push -> deploy 가 한 줄로 이어진다.
+    needs: test
+    # PR에서는 이미지를 올리지 않는다. main/develop 푸시에서만 돈다.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,6 +94,7 @@ jobs:
 
   deploy:
     needs: build-and-push
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -55,13 +106,37 @@ jobs:
           role-to-assume: arn:aws:iam::136022486319:role/fire-dispatch-gha-deploy
           aws-region: ap-northeast-2
 
+      # 주의: AWS-RunShellScript 는 이 명령들을 bash 가 아니라 /bin/sh(dash)로 돌린다.
+      # 그래서 여기서는 pipefail 같은 bash 전용 문법을 쓸 수 없다 (set -eu 까지만).
+      # deploy.sh 자체는 bash 로 명시해서 실행하므로 그 안에서는 bash 문법을 써도 된다.
+      #
+      # 배포 스크립트는 서버가 아니라 이 리포에 있다 (deploy/deploy.sh).
+      # 서버는 매 배포마다 방금 빌드한 커밋으로 리포를 맞춘 뒤 그 스크립트를 돌린다.
+      # 이렇게 해야 실행되는 스크립트와 배포되는 이미지가 같은 커밋에서 나온다.
+      - name: SSM 파라미터 작성
+        run: |
+          cat > ssm-params.json <<'JSON'
+          {
+            "commands": [
+              "set -eu",
+              "REPO=/home/ubuntu/deploy/backend",
+              "SHA=${{ github.sha }}",
+              "install -d -o ubuntu -g ubuntu /home/ubuntu/deploy",
+              "if [ -d \"$REPO/.git\" ]; then su - ubuntu -c \"git -C $REPO fetch --depth 1 origin $SHA\"; else su - ubuntu -c \"git clone --filter=blob:none --no-checkout https://github.com/FIREWAY-team/backend.git $REPO && git -C $REPO fetch --depth 1 origin $SHA\"; fi",
+              "su - ubuntu -c \"git -C $REPO reset --hard $SHA\"",
+              "su - ubuntu -c \"bash $REPO/deploy/deploy.sh\""
+            ]
+          }
+          JSON
+          cat ssm-params.json
+
       - name: SSM으로 서버에서 pull & 재기동
         run: |
           CMD_ID=$(aws ssm send-command \
             --instance-ids i-0a21fc6612d33c27a \
             --document-name AWS-RunShellScript \
             --comment "deploy ${{ github.sha }}" \
-            --parameters 'commands=["su - ubuntu -c /home/ubuntu/deploy/deploy.sh"]' \
+            --parameters file://ssm-params.json \
             --query Command.CommandId --output text)
           echo "CommandId: $CMD_ID"
 
