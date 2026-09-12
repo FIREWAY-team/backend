@@ -50,15 +50,24 @@ app:
 server:
   port: 8080
 
-  # /api/no_go 가 2,135건을 한 번에 내려줘서 본문이 534KB다. 좌표 숫자만 반복되는 JSON이라
-  # gzip 이 63KB(11.8%)까지 줄인다. 압축 없이 dong 필터로 잘라낸 것보다 전체 압축이 더 작다.
+  # /api/no_go 가 1,274건을 한 번에 내려줘서 본문이 321KB다. 좌표 숫자만 반복되는 JSON이라
+  # gzip 이 39KB(12%)까지 줄인다. 압축 없이 dong 필터로 잘라낸 것보다 전체 압축이 더 작다.
   # nginx 가 이미 gzip 중이면 백엔드가 보낸 걸 그대로 통과시킨다(이중 압축은 일어나지 않는다).
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/plain,text/css,text/javascript
     min-response-size: 2KB
 
-# Nginx가 /actuator/health 만 백엔드로 보낸다. health 외에는 노출하지 않는다.
+# 실측 결과 Nginx 는 /actuator/ 전체를 백엔드로 넘긴다.
+# (health 만 넘긴다는 종전 주석은 사실이 아니었다 — 외부에서
+#  /actuator/metrics 가 200 으로 응답하는 것을 확인했다.)
+#
+# 따라서 외부 노출을 막는 실제 경계는 Nginx 가 아니라 아래 exposure 목록이다.
+# 여기에 추가하는 엔드포인트는 전부 인터넷에 공개된다고 보고 판단할 것.
+# env / beans 가 404 인 것도 Nginx 가 막아서가 아니라 이 목록에 없어서다.
+#
+# metrics 를 다시 켜려면 Nginx 에서 /actuator/ 를 health 만 남기고 막거나,
+# management.server.port 로 액추에이터를 별도 포트에 띄워야 한다.
 management:
   endpoints:
     web:
