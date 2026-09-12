@@ -1,0 +1,4 @@
+pymysql==1.1.1
+# MySQL 8 기본 인증(caching_sha2_password)은 평문 커넥션에서 비밀번호를 RSA로 감싸 보낸다.
+# 이게 없으면 접속 단계에서 RuntimeError 로 죽는다.
+cryptography==50.0.1
