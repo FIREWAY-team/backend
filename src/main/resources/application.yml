@@ -24,6 +24,14 @@ app:
 server:
   port: 8080
 
+  # /api/no_go 가 2,135건을 한 번에 내려줘서 본문이 534KB다. 좌표 숫자만 반복되는 JSON이라
+  # gzip 이 63KB(11.8%)까지 줄인다. 압축 없이 dong 필터로 잘라낸 것보다 전체 압축이 더 작다.
+  # nginx 가 이미 gzip 중이면 백엔드가 보낸 걸 그대로 통과시킨다(이중 압축은 일어나지 않는다).
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/plain,text/css,text/javascript
+    min-response-size: 2KB
+
 # Nginx가 /actuator/health 만 백엔드로 보낸다. health 외에는 노출하지 않는다.
 management:
   endpoints:
