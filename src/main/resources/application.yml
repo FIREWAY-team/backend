@@ -50,12 +50,20 @@ app:
 server:
   port: 8080
 
-# Nginx가 /actuator/health 만 백엔드로 보낸다. health 외에는 노출하지 않는다.
+# Nginx가 /actuator/health 만 백엔드로 보낸다. 그래서 아래 metrics 를 켜도
+# 밖에서는 닿지 않는다. 서버에 들어가 127.0.0.1 로만 볼 수 있다.
+#
+# metrics 를 켠 이유: 램이 1GB뿐이라 Prometheus/Grafana 를 올릴 수 없다.
+# 대신 장애가 났을 때 서버에서 힙·커넥션풀·GC 현재값을 직접 확인할 수 있게 한다.
+# 수집기가 없으므로 시계열은 안 남는다. '지금 값'만 본다.
+#
+# 주의: nginx 에 /actuator/ 를 통째로 넘기는 location 을 추가하면
+#       이 설정이 그대로 외부 노출이 된다. health 만 넘길 것.
 management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,metrics
   endpoint:
     health:
       probes:
