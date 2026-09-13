@@ -5,10 +5,12 @@ import com.fireway.backend.modules.cctv.interfaces.CctvController;
 import com.fireway.backend.modules.routing.application.RouteService;
 import com.fireway.backend.modules.routing.interfaces.RouteController;
 import com.fireway.backend.modules.scenarios.interfaces.ScenarioController;
+import com.fireway.backend.modules.staticdata.application.NoGoAreaService;
 import com.fireway.backend.modules.staticdata.interfaces.NoGoController;
 import com.fireway.backend.modules.vehicles.interfaces.VehicleController;
 import com.fireway.backend.modules.scenarios.application.ScenarioService;
 import com.fireway.backend.modules.vehicles.application.VehicleService;
+import java.util.List;
 import org.junit.jupiter.api.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
@@ -25,7 +27,7 @@ class ControllerSmokeTest {
     private static MappingJackson2HttpMessageConverter snakeCaseJson() {
         return new MappingJackson2HttpMessageConverter(new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE));
     }
-    @BeforeEach void setUp() { mvc = MockMvcBuilders.standaloneSetup(new ScenarioController(new ScenarioService(null)), new NoGoController(), new CctvController(), new VehicleController(new VehicleService(null)), new RouteController(new RouteService(null))).setMessageConverters(snakeCaseJson()).build(); }
+    @BeforeEach void setUp() { mvc = MockMvcBuilders.standaloneSetup(new ScenarioController(new ScenarioService(null)), new NoGoController(new NoGoAreaService(List::of)), new CctvController(), new VehicleController(new VehicleService(null)), new RouteController(new RouteService(null))).setMessageConverters(snakeCaseJson()).build(); }
     @Test void scenarios() throws Exception { mvc.perform(get("/api/scenarios")).andExpect(status().isOk()); }
     @Test void noGo() throws Exception { mvc.perform(get("/api/no_go")).andExpect(status().isOk()); }
     @Test void cctv() throws Exception { mvc.perform(get("/api/cctv/cctv-01")).andExpect(status().isOk()); }
