@@ -51,13 +51,15 @@ class CctvOverlayTest {
                 new RuleBasedExplanationBuilder());
     }
 
-    /** Polygon centred on the midpoint of the fixture route so {@code isNearRoute} definitely hits. */
+    /**
+     * Polygon centred on the shared start point of every fixture candidate so {@code isNearRoute}
+     * hits all three routes (mock generates candidates with a jittered midpoint but the same
+     * start/end — polygon on start guarantees a touch on every route).
+     */
     private static NoGoAreaSummary polygonOnRoute(String id) {
-        double midLat = (FROM.lat() + TO.lat()) / 2;
-        double midLon = (FROM.lon() + TO.lon()) / 2;
         return new NoGoAreaSummary(id, "골목 좁음", null, List.of(
-                new double[]{midLon, midLat},
-                new double[]{midLon + 0.00005, midLat + 0.00005}));
+                new double[]{FROM.lon(), FROM.lat()},
+                new double[]{FROM.lon() + 0.00005, FROM.lat() + 0.00005}));
     }
 
     @Test
