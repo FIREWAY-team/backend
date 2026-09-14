@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 import com.fireway.backend.modules.routing.application.*;
 import com.fireway.backend.modules.routing.application.port.*;
 import com.fireway.backend.modules.routing.domain.*;
+import com.fireway.backend.modules.routing.infrastructure.MockCctvReadingLookup;
 import com.fireway.backend.modules.routing.infrastructure.MockNoGoLookup;
 import com.fireway.backend.modules.vehicles.application.VehicleService;
 import com.fireway.backend.modules.vehicles.application.port.VehicleRepository;
@@ -22,7 +23,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest(classes = RoutePlannerIntegrationTest.Config.class)
 class RoutePlannerIntegrationTest {
     @Configuration(proxyBeanMethods = false)
-    @Import({RoutePlanner.class, VehicleService.class, MockNoGoLookup.class,
+    @Import({RoutePlanner.class, VehicleService.class, MockNoGoLookup.class, MockCctvReadingLookup.class,
             WeightedOverlapCalculator.class, GoldenTimePrioritizer.class, RuleBasedExplanationBuilder.class})
     static class Config { }
 

@@ -39,6 +39,7 @@ class ControllerSmokeTest {
             new RouteController(new RoutePlanner(
                 new VehicleService(mock(VehicleRepository.class)),
                 new MockNoGoLookup(),
+                new MockCctvReadingLookup(),
                 new MockValhallaClient(),
                 new WeightedOverlapCalculator(),
                 new GoldenTimePrioritizer(),
