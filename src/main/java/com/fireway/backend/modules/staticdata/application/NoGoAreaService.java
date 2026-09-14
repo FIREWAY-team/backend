@@ -1,5 +1,6 @@
 package com.fireway.backend.modules.staticdata.application;
 import com.fireway.backend.modules.staticdata.application.port.NoGoAreaRepository;
+import com.fireway.backend.modules.staticdata.domain.BoundingBox;
 import com.fireway.backend.modules.staticdata.domain.NoGoArea;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -16,4 +17,10 @@ import org.springframework.stereotype.Service;
      * 실제 진입로를 잘못 막는다. 그래서 라우팅에는 넣지 않는다.
      */
     public List<NoGoArea> forRouting() { return repository.findRoutable(); }
+
+    /**
+     * 라우팅 주입용 중 범위 안의 것만. 중원구 전체가 1,274건이라 경로 하나 뽑는데
+     * 전건을 넘길 이유가 없다. 호출 쪽이 경로를 감싸는 bbox 를 준다.
+     */
+    public List<NoGoArea> forRouting(BoundingBox box) { return repository.findRoutableWithin(box); }
 }
