@@ -117,6 +117,9 @@ curl -i http://localhost:8080/api/route \
 | GET | `/api/cctv/{id}` | CCTV 판독·유효 폭·confidence |
 | GET | `/api/vehicles` | pump-3.5, pump-8 차량 제원 |
 | GET | `/api/fire-system/nearest?lat=&lon=` | 외부 소방 시스템 mock 연계 |
+| POST | `/api/incidents` | 신고 접수. 접수번호 발번 |
+| GET | `/api/incidents?status=` | 신고 목록. 접수 최신순 |
+| GET | `/api/incidents/{incident_no}` | 신고 상세 |
 | POST | `/api/files/upload-url` | 이미지 업로드용 presigned URL 발급 |
 
 `POST /api/route`는 위 라우팅 섹션의 새 계약(`vehicle_id`, `from`, `to`)을 사용합니다. 낡은 `scenario_id`/`lat`/`lon` 계약은 제거되었습니다.
@@ -190,3 +193,22 @@ DB에는 URL이 아니라 **key만** 저장합니다(버킷을 옮기거나 Clou
 
 로컬(prod 프로파일이 아닐 때)은 S3 대신 `LocalStorageAdapter` 가 붙어 `build/local-storage/` 에
 파일을 두고 `/local-storage/**` 로 서빙합니다. AWS 자격증명이 없어도 됩니다.
+
+## 신고 접수
+
+`POST /api/incidents` 요청 예: `{ "address": "성남시 중원구 은행로 12-3", "lat": 37.4381, "lon": 127.1422, "summary": "주택 화재" }`.
+
+응답(201) 예:
+
+```json
+{ "incident_no": "2026-0915-0001", "status": "RECEIVED",
+  "address": "성남시 중원구 은행로 12-3", "lat": 37.4381, "lon": 127.1422,
+  "summary": "주택 화재", "received_at": "2026-09-15T14:30:00", "closed_at": null }
+```
+
+- 접수번호는 `연도-MMdd-일련번호` 입니다. 같은 날 접수가 겹치면 유니크 키가 막고 번호를 다시 땁니다.
+- `status` 는 `RECEIVED` / `DISPATCHED` / `ON_SCENE` / `CLOSED` / `CANCELLED` 입니다.
+  목록 조회의 `status` 파라미터는 대소문자를 가리지 않고, 없는 값이면 422 입니다.
+- **좌표가 권역을 크게 벗어나면 422 입니다.** 관할 확인이 아니라 위경도를 뒤바꿔 넣은 실수를
+  입구에서 잡기 위한 검사입니다(위도 자리에 127 이 오면 걸립니다). 인접 구 공조 출동은 막지 않습니다.
+- 좌표는 `POINT` 가 아니라 `lat`/`lon` 으로 저장합니다. `scenarios` 와 같은 방식입니다.
