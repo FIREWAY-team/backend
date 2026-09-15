@@ -1,5 +1,6 @@
 package com.fireway.backend.modules.staticdata.application;
 import static org.assertj.core.api.Assertions.assertThat;
+import com.fireway.backend.modules.staticdata.domain.BoundingBox;
 import com.fireway.backend.modules.staticdata.domain.Coordinate;
 import com.fireway.backend.modules.staticdata.domain.NoGoArea;
 import com.fireway.backend.modules.staticdata.domain.NoGoArea.GeometryType;
@@ -8,9 +9,12 @@ import org.junit.jupiter.api.Test;
 
 class NoGoAreaServiceTest {
     private static NoGoArea area(long id, String status) {
+        return at(id, status, 37.44, 127.15);
+    }
+    private static NoGoArea at(long id, String status, double lat, double lon) {
         return new NoGoArea(id, "ext-" + id, "금광1동", "소방차 진입곤란 지정", 1, status,
                 status.equals(NoGoArea.UNVERIFIED) ? "지도상 미확인" : "", GeometryType.LINE_STRING,
-                List.of(new Coordinate(37.44, 127.15), new Coordinate(37.441, 127.151)));
+                List.of(new Coordinate(lat, lon), new Coordinate(lat + 0.001, lon + 0.001)));
     }
     private static final NoGoArea OK1 = area(1, NoGoArea.OK);
     private static final NoGoArea GHOST = area(2, NoGoArea.UNVERIFIED);
@@ -28,6 +32,25 @@ class NoGoAreaServiceTest {
     // 가까운 실제 진입로를 잘못 막는다.
     @Test void 라우팅용_목록에서는_미확인_구간이_빠진다() {
         assertThat(service(OK1, GHOST, OK2).forRouting()).containsExactly(OK1, OK2);
+    }
+
+    // bbox 조회도 미확인 구간을 먼저 걸러야 한다. 범위 안에 있다고 통과시키면 안 된다.
+    @Test void 범위_조회에서도_미확인_구간은_빠진다() {
+        BoundingBox box = new BoundingBox(37.43, 127.14, 37.45, 127.16);
+        assertThat(service(OK1, GHOST, OK2).forRouting(box)).containsExactly(OK1, OK2);
+    }
+
+    @Test void 범위_밖_구간은_빠진다() {
+        NoGoArea 멀리 = at(9, NoGoArea.OK, 37.50, 127.30);
+        BoundingBox box = new BoundingBox(37.43, 127.14, 37.45, 127.16);
+        assertThat(service(OK1, 멀리).forRouting(box)).containsExactly(OK1);
+    }
+
+    // 끝점 하나만 걸쳐도 포함한다. 선분이 범위를 스치는 경우를 놓치면 안 된다.
+    @Test void 한_점만_걸쳐도_포함한다() {
+        NoGoArea 걸침 = at(10, NoGoArea.OK, 37.4499, 127.1599);
+        BoundingBox box = new BoundingBox(37.43, 127.14, 37.45, 127.16);
+        assertThat(service(걸침).forRouting(box)).containsExactly(걸침);
     }
 
     @Test void 전부_미확인이면_라우팅에_아무것도_안_간다() {

@@ -1,5 +1,6 @@
 package com.fireway.backend.modules.staticdata.infrastructure;
 import com.fireway.backend.modules.staticdata.application.port.NoGoAreaRepository;
+import com.fireway.backend.modules.staticdata.domain.BoundingBox;
 import com.fireway.backend.modules.staticdata.domain.NoGoArea;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -18,6 +19,13 @@ import org.springframework.stereotype.Component;
     // V2_3 의 ix_no_go_areas_verification 을 탄다.
     private static final String FIND_ROUTABLE =
             SELECT + " WHERE verification_status = ? ORDER BY id";
+    // MBRIntersects 가 V2 의 SPATIAL INDEX 를 탄다. ST_Intersects 는 정밀 판정이라
+    // 여기선 과하다 — bbox 로 후보만 줄이는 게 목적이다.
+    private static final String FIND_ROUTABLE_WITHIN = SELECT + """
+             WHERE verification_status = ?
+               AND MBRIntersects(geom, ST_GeomFromText(?, 4326, 'axis-order=long-lat'))
+             ORDER BY id
+            """;
 
     private final JdbcTemplate jdbc;
     public NoGoAreaRepositoryAdapter(JdbcTemplate jdbc) { this.jdbc = jdbc; }
@@ -29,6 +37,12 @@ import org.springframework.stereotype.Component;
     /** 포트의 기본 구현(메모리 필터) 대신 SQL 로 거른다. */
     @Override public List<NoGoArea> findRoutable() {
         return jdbc.query(FIND_ROUTABLE, NoGoAreaRepositoryAdapter::mapRow, NoGoArea.OK);
+    }
+
+    /** bbox 도 geom 과 같은 축 순서(long-lat)로 넘긴다. 틀리면 조용히 0건이 된다. */
+    @Override public List<NoGoArea> findRoutableWithin(BoundingBox box) {
+        return jdbc.query(FIND_ROUTABLE_WITHIN, NoGoAreaRepositoryAdapter::mapRow,
+                NoGoArea.OK, box.toPolygonWkt());
     }
 
     private static NoGoArea mapRow(ResultSet rs, int rowNum) throws SQLException {
