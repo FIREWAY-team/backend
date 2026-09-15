@@ -120,6 +120,8 @@ curl -i http://localhost:8080/api/route \
 | POST | `/api/incidents` | 신고 접수. 접수번호 발번 |
 | GET | `/api/incidents?status=` | 신고 목록. 접수 최신순 |
 | GET | `/api/incidents/{incident_no}` | 신고 상세 |
+| POST | `/api/incidents/{incident_no}/routes` | 출동 경로 산출 + 판단 근거 저장 |
+| GET | `/api/incidents/{incident_no}/routes` | 저장된 경로와 근거 |
 | POST | `/api/files/upload-url` | 이미지 업로드용 presigned URL 발급 |
 
 `POST /api/route`는 위 라우팅 섹션의 새 계약(`vehicle_id`, `from`, `to`)을 사용합니다. 낡은 `scenario_id`/`lat`/`lon` 계약은 제거되었습니다.
@@ -212,3 +214,30 @@ DB에는 URL이 아니라 **key만** 저장합니다(버킷을 옮기거나 Clou
 - **좌표가 권역을 크게 벗어나면 422 입니다.** 관할 확인이 아니라 위경도를 뒤바꿔 넣은 실수를
   입구에서 잡기 위한 검사입니다(위도 자리에 127 이 오면 걸립니다). 인접 구 공조 출동은 막지 않습니다.
 - 좌표는 `POINT` 가 아니라 `lat`/`lon` 으로 저장합니다. `scenarios` 와 같은 방식입니다.
+
+## 출동 경로
+
+`POST /api/incidents/{incident_no}/routes` 요청 예: `{ "vehicle_id": "pump-8", "from_lat": 37.4415, "from_lon": 127.1432 }`.
+도착지는 신고 좌표라 받지 않습니다.
+
+응답 예(권장 경로 1건 발췌):
+
+```json
+{ "rank": 1, "recommended": false, "vehicle_id": "pump-8",
+  "distance_m": 1840, "eta_seconds": 420, "polyline": "...",
+  "passable_for_vehicle": false, "meets_golden_time": true, "passable_prob": 0.9,
+  "explanation": "진입곤란 2건으로 우회",
+  "excluded_reasons": [
+    { "polygon_id": "geumgwang1-impassable-003", "reason": "소방차 진입곤란 지정", "evidence_url": null }
+  ],
+  "unlocked_by_cctv": ["cctv-01"] }
+```
+
+- **`excluded_reasons` 가 이 기능의 존재 이유입니다.** 라우팅은 결과를 응답으로 한 번 뱉고 끝이라
+  “왜 이 경로였는지”가 휘발됩니다. 안전 제품에서 판단 근거가 안 남으면 나중에 설명할 방법이 없습니다.
+  `polygon_id` 는 `no_go_areas.ext_id` 입니다.
+- `recommended` 는 **순위 1이면서 차량이 실제로 지날 수 있을 때만** true 입니다.
+  1순위여도 `passable_for_vehicle` 이 false 면 권장이 아닙니다.
+- `unlocked_by_cctv` 는 CCTV 판독으로 풀린 정적 진입곤란 구간입니다.
+- **다시 호출하면 이전 결과를 대체합니다.** 차량이 바뀌면 판정이 통째로 바뀌기 때문입니다.
+  산출 전에는 빈 목록을 돌려줍니다.
