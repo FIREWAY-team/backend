@@ -9,7 +9,7 @@
 | Major | 담당 | 도메인 |
 |---|---|---|
 | V1 | 박종준 | scenarios, routing |
-| V2 | 이태연 | no_go_areas |
+| V2 | 이태연 | no_go_areas, incidents |
 | V3 | 유강현 | cctv_readings |
 | V4 | 윤종호 | vehicles |
 
@@ -17,6 +17,10 @@
 - `V1__init_scenarios.sql`
 - `V1_1__scenarios_fixture.sql` ← Flyway가 V1.1로 파싱
 - `V1_2__add_route_metadata_column.sql`
+
+새 도메인도 **본인 major 의 서브버전**으로 넣습니다. 미배정 major(V5 등)를 먼저 집으면
+다른 사람과 같은 번호를 동시에 쓸 수 있고, Flyway 는 같은 버전이 둘이면 기동에 실패합니다.
+`incidents` 가 V2_5 로 들어간 것도 그래서입니다.
 
 ⚠️ Flyway는 파일 알파벳순이 아니라 semver 순으로 실행: `V1 → V1.1 → V1.2 → V2 → V2.1 → V3 → V4`
 
