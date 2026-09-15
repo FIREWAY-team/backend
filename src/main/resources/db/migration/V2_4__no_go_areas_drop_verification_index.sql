@@ -1,0 +1,12 @@
+-- V2_3 에서 verification_status 에 BTREE 를 걸었는데, 이게 공간 인덱스를 밀어냈다.
+--
+-- 값의 97.3% 가 'ok' 라 선택도가 사실상 없고(1,276행 중 1,242행), 옵티마이저는 그걸
+-- 공간 인덱스보다 먼저 고른다. 결과적으로 bbox 조회가 전건을 훑은 뒤 MBRIntersects 를
+-- 필터로 돌린다. 실측:
+--
+--   BTREE 사용   type=ref    key=ix_no_go_areas_verification   rows=1242
+--   BTREE 무시   type=range  key=polygon (SPATIAL)             rows=363
+--
+-- 라우팅 조회는 항상 bbox 와 함께 들어오므로 공간 인덱스가 먼저 걸리는 편이 낫다.
+-- verification_status 단독 조회는 어차피 전건에 가까워서 인덱스가 의미 없다.
+DROP INDEX ix_no_go_areas_verification ON no_go_areas;
