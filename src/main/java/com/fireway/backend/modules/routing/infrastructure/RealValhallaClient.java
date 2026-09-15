@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @Component
-@Profile("prod")
+@Profile("valhalla")
 public class RealValhallaClient implements ValhallaClient {
     private static final Logger log = LoggerFactory.getLogger(RealValhallaClient.class);
     private final WebClient client;
