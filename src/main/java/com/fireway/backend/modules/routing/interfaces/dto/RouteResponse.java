@@ -12,21 +12,22 @@ public record RouteResponse(List<RouteCandidateDto> routes,
         @JsonProperty("alternatives_status") String alternativesStatus,
         @JsonProperty("no_go_considered") int noGoConsidered,
         @JsonProperty("vehicle_used") VehicleUsedDto vehicleUsed,
-        List<String> warnings) {
+        List<String> warnings, @JsonProperty("cctv_assessments") List<RoutePlanResult.CctvAssessment> cctvAssessments) {
     public static RouteResponse from(RoutePlanResult result) {
         List<String> warnings = new ArrayList<>();
         if (result.valhallaMocked())
-            warnings.add("valhalla_mock: 실 Valhalla tile 대신 mock 후보를 반환했습니다.");
+            warnings.add("osrm_candidates: CCTV 통과 구간을 경유해 도로 후보를 탐색했습니다. OSRM은 차량 높이·중량 제한을 지원하지 않습니다.");
         if (result.noGoMocked())
             warnings.add("no_go_mock: 이태연 staticdata 브랜치 머지 전 임시 폴리곤을 사용했습니다.");
         if ("partial".equals(result.alternativesStatus()))
             warnings.add("no_route_within_golden_time: 5분 이내 도달 후보가 없습니다.");
         if ("no_alternative".equals(result.alternativesStatus()))
             warnings.add("no_alternative: 유효 후보가 없습니다. 대로 정차·호스 전개를 검토하세요.");
+        warnings.add("cctv_mock: AI 판독은 차량별 목데이터입니다. 실제 CCTV 분석 결과가 아닙니다.");
         return new RouteResponse(
                 result.routes().stream().map(RouteCandidateDto::from).toList(),
                 result.calcTimeMs(), result.kEffective(), result.overlapMatrix(), result.alternativesStatus(),
-                result.noGoConsidered(), VehicleUsedDto.from(result.vehicleUsed()), warnings);
+                result.noGoConsidered(), VehicleUsedDto.from(result.vehicleUsed()), warnings, result.cctvAssessments());
     }
 
     public record VehicleUsedDto(String id, String name,

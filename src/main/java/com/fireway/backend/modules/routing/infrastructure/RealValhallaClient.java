@@ -35,7 +35,7 @@ public class RealValhallaClient implements ValhallaClient {
                 "costing", "truck",
                 "costing_options", Map.of("truck", Map.of("width", truck.width(), "height", truck.height(),
                         "length", truck.length(), "weight", truck.weight(), "hazmat", truck.hazmat())),
-                "exclude_polygons", request.polygons().stream().map(p -> p.pathAsLonLat()).toList(),
+                "exclude_polygons", request.polygons().stream().map(p -> com.fireway.backend.modules.routing.application.RouteGeometry.exclusionRing(p.pathAsLonLat())).toList(),
                 "alternates", request.k() - 1,
                 "directions_options", Map.of("units", "kilometers"));
         try {

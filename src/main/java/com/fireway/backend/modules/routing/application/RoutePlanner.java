@@ -10,13 +10,6 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class RoutePlanner {
-    /**
-     * Distance in meters within which a route point is considered to touch a no-go polygon. Matches the
-     * threshold used by {@link #isNearRoute(RouteCandidate, NoGoAreaSummary, double)} elsewhere in this
-     * class. Kept as a constant so tests and explanations share a single source of truth.
-     */
-    private static final double NO_GO_TOUCH_METERS = 120.0;
-
     private final VehicleService vehicles;
     private final NoGoLookup noGoLookup;
     private final CctvReadingLookup cctvLookup;
@@ -42,18 +35,25 @@ public class RoutePlanner {
         Vehicle vehicle = vehicles.findById(command.vehicleId())
                 .orElseThrow(() -> new NotFoundException("차량을 찾을 수 없습니다: " + command.vehicleId()));
         List<NoGoAreaSummary> polygons = noGoLookup.forRouting(BoundingBox.around(command.from(), command.to(), 500));
+        // One snapshot per plan: a PASS must unlock the edge before the router searches it.
+        Map<String, Optional<CctvVerdict>> verdicts = cctvLookup.forPolygons(
+                polygons.stream().map(NoGoAreaSummary::polygonId).toList());
+        List<NoGoAreaSummary> blocked = polygons.stream()
+                .filter(p -> verdicts.get(p.polygonId()).filter(v -> v.passes(vehicle.vehicleId())).isEmpty())
+                .toList();
+        List<NoGoAreaSummary> cleared = polygons.stream().filter(p -> !blocked.contains(p)).toList();
         List<RouteCandidate> candidates = valhalla.route(new RoutePlanRequest(
-                command.from(), command.to(), vehicle, polygons, command.k()));
-        List<RouteCandidate> filtered = overlaps.filter(candidates, command.overlapThreshold());
-        List<RouteCandidate> routes = prioritizer.sort(filtered, command.goldenTimeSec())
+                command.from(), command.to(), vehicle, blocked, command.k(), cleared));
+        for (RouteCandidate route : candidates) applyCctvOverlay(route, polygons, vehicle, verdicts);
+        // Filter duplicates only after ranking by feasibility, otherwise a blocked shortcut can
+        // suppress the usable detour that shares most of its approach road.
+        List<RouteCandidate> ordered = reorderPassableFirst(prioritizer.sort(candidates, command.goldenTimeSec()));
+        List<RouteCandidate> routes = overlaps.filter(ordered, command.overlapThreshold())
                 .stream().limit(command.k()).toList();
+        routes = reorderPassableFirst(routes);
         for (RouteCandidate route : routes) {
-            applyCctvOverlay(route, polygons, vehicle);
             route.setExplanation(explanations.build(route, vehicle, command.goldenTimeSec()));
         }
-        // 통과 가능 후보를 상위로 다시 정렬 (골든타임 정렬은 앞선 prioritizer 가 이미 매겼고, 여기서는
-        // "차량으로 실제 갈 수 있는 경로"를 앞으로 끌어올리는 마지막 층).
-        routes = reorderPassableFirst(routes);
         String status = routes.isEmpty() ? "no_alternative"
                 : routes.stream().anyMatch(r -> r.passableForVehicle() && r.meetsGoldenTime()) ? "normal"
                 : routes.stream().anyMatch(RouteCandidate::passableForVehicle) ? "partial"
@@ -62,34 +62,19 @@ public class RoutePlanner {
         boolean valhallaMocked = valhalla.getClass().getSimpleName().startsWith("Mock");
         boolean noGoMocked = noGoLookup.getClass().getSimpleName().startsWith("Mock");
         return new RoutePlanResult(routes, (System.nanoTime() - start) / 1_000_000,
-                routes.size(), matrix, status, polygons.size(), valhallaMocked, noGoMocked, vehicle);
+                routes.size(), matrix, status, polygons.size(), valhallaMocked, noGoMocked, vehicle,
+                polygons.stream().map(p -> {
+                    Optional<CctvVerdict> v = verdicts.get(p.polygonId());
+                    return new RoutePlanResult.CctvAssessment(p.polygonId(), p.pathAsLonLat(),
+                            v.map(value -> value.verdictFor(vehicle.vehicleId())).orElse("UNKNOWN"),
+                            v.map(CctvVerdict::cctvId).orElse(null), v.map(CctvVerdict::confidence).orElse(0.0));
+                }).toList());
     }
 
-    /**
-     * Apply the 3-layer decision (static no-go × CCTV verdict × vehicle) to a single route, mutating
-     * the passed candidate in place.
-     * <p>
-     * For every static no-go this route touches within {@link #NO_GO_TOUCH_METERS} meters, ask the
-     * CCTV lookup for a per-vehicle verdict:
-     * <ul>
-     *   <li>Verdict PASSes the vehicle → the no-go is <b>unlocked</b>. The polygon is dropped from
-     *       {@code excludedReasons} and the cctv id is recorded in {@code unlockedByCctv}.</li>
-     *   <li>Verdict FAILs the vehicle → the polygon stays in {@code excludedReasons} and the route
-     *       is marked <b>impassable</b> for this vehicle (a hard block, since we have real evidence
-     *       the vehicle does not fit).</li>
-     *   <li>No CCTV verdict at all → we cannot rule out the block. The polygon stays in
-     *       {@code excludedReasons}, but the route is only flagged as {@code hasUnresolvedStaticNoGo};
-     *       whether it is still considered passable falls back to the wider planner heuristics rather
-     *       than being hard-refused, since the static baseline may itself be stale.</li>
-     * </ul>
-     *
-     * {@code passableProb} moves with the ratio of unlocked touches — a route that clears every
-     * touched no-go by CCTV PASS lands near {@code 0.96}; a route with pending unresolved touches
-     * lands lower, proportional to the ratio.
-     */
-    private void applyCctvOverlay(RouteCandidate route, List<NoGoAreaSummary> polygons, Vehicle vehicle) {
+    private void applyCctvOverlay(RouteCandidate route, List<NoGoAreaSummary> polygons, Vehicle vehicle,
+                                  Map<String, Optional<CctvVerdict>> verdicts) {
         List<NoGoAreaSummary> touched = polygons.stream()
-                .filter(polygon -> isNearRoute(route, polygon, NO_GO_TOUCH_METERS))
+                .filter(polygon -> RouteGeometry.touches(route.coordinates(), polygon.pathAsLonLat()))
                 .toList();
         if (touched.isEmpty()) {
             route.setExcludedReasons(List.of());
@@ -104,23 +89,22 @@ public class RoutePlanner {
         int failCount = 0;
         int unresolvedCount = 0;
         for (NoGoAreaSummary polygon : touched) {
-            Optional<CctvVerdict> verdict = cctvLookup.forPolygon(polygon.polygonId());
+            Optional<CctvVerdict> verdict = verdicts.get(polygon.polygonId());
             if (verdict.isPresent() && verdict.get().passes(vehicle.vehicleId())) {
                 unlockedCctvIds.add(verdict.get().cctvId());
                 continue;
             }
             stillBlocking.add(new ExcludedReason(polygon.polygonId(), polygon.reason(), polygon.evidenceUrl()));
-            if (verdict.isPresent()) failCount++;
+            if (verdict.isPresent() && "FAIL".equals(verdict.get().verdictFor(vehicle.vehicleId()))) failCount++;
             else unresolvedCount++;
         }
         route.setExcludedReasons(stillBlocking);
         route.setUnlockedByCctv(List.copyOf(unlockedCctvIds));
         route.setHasUnresolvedStaticNoGo(unresolvedCount > 0);
-        // 하드 차단: CCTV 가 "이 차량 FAIL" 이라고 실 판정한 폴리곤이 하나라도 남으면 진입 불가.
-        route.setPassableForVehicle(failCount == 0);
+        // Unknown and UNCERTAIN never authorize entry into a static no-go.
+        route.setPassableForVehicle(failCount == 0 && unresolvedCount == 0);
         double unlockedRatio = touched.isEmpty() ? 1.0 : (double) unlockedCctvIds.size() / touched.size();
-        // 통과 가능한 경로: CCTV 로 클리어된 비율이 높을수록 0.96 근처. 미해결(unresolved) 남으면 0.7~0.85.
-        // 진입 불가 경로: 어쨌든 못 감. 확률 0.05 로 눌러서 상황실이 실수로 선택하지 않게.
+        // Mock confidence score; unresolved evidence cannot authorize a route.
         if (!route.passableForVehicle()) {
             route.setPassableProb(0.05);
         } else {
@@ -138,18 +122,4 @@ public class RoutePlanner {
         return merged;
     }
 
-    private boolean isNearRoute(RouteCandidate route, NoGoAreaSummary polygon, double meters) {
-        // 폴리곤 대표점(좌표 평균)과 경로 각 점 사이 최소 거리로 근사 판단.
-        List<double[]> path = polygon.pathAsLonLat();
-        if (path == null || path.isEmpty()) return false;
-        double centroidLon = path.stream().mapToDouble(p -> p[0]).average().orElse(0);
-        double centroidLat = path.stream().mapToDouble(p -> p[1]).average().orElse(0);
-        for (double[] point : route.coordinates()) {
-            double dLon = point[0] - centroidLon, dLat = point[1] - centroidLat;
-            double distance = 111_320
-                    * Math.hypot(dLon * Math.cos(Math.toRadians(point[1])), dLat);
-            if (distance <= meters) return true;
-        }
-        return false;
-    }
 }

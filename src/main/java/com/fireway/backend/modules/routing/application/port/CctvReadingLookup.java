@@ -1,7 +1,7 @@
 package com.fireway.backend.modules.routing.application.port;
 
 import com.fireway.backend.modules.routing.domain.CctvVerdict;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * Inbound port for consulting the AI pipeline's per-frame verdicts from inside the routing planner.
@@ -25,4 +25,10 @@ public interface CctvReadingLookup {
      * @param polygonId identifier from {@link com.fireway.backend.modules.routing.domain.NoGoAreaSummary#polygonId()}
      */
     Optional<CctvVerdict> forPolygon(String polygonId);
+
+    default Map<String, Optional<CctvVerdict>> forPolygons(List<String> ids) {
+        Map<String, Optional<CctvVerdict>> result = new HashMap<>();
+        for (String id : ids) result.put(id, forPolygon(id));
+        return result;
+    }
 }

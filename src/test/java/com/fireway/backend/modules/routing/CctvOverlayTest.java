@@ -96,7 +96,7 @@ class CctvOverlayTest {
     }
 
     @Test
-    void missing_cctv_verdict_marks_the_no_go_unresolved_but_does_not_hard_block() {
+    void missing_cctv_verdict_does_not_authorize_entry() {
         var polygon = polygonOnRoute("poly-silent");
         CctvReadingLookup cctv = id -> Optional.empty();
 
@@ -104,11 +104,11 @@ class CctvOverlayTest {
 
         assertThat(result.routes()).allSatisfy(route -> {
             assertThat(route.hasUnresolvedStaticNoGo()).isTrue();
-            assertThat(route.passableForVehicle()).isTrue();
+            assertThat(route.passableForVehicle()).isFalse();
             assertThat(route.excludedReasons()).extracting(ExcludedReasonId::of).contains("poly-silent");
             assertThat(route.unlockedByCctv()).isEmpty();
         });
-        assertThat(result.alternativesStatus()).isEqualTo("normal");
+        assertThat(result.alternativesStatus()).isEqualTo("blocked");
     }
 
     @Test
@@ -117,9 +117,7 @@ class CctvOverlayTest {
         var farAway = new NoGoAreaSummary("poly-far", "다른 동", null, List.of(
                 new double[]{128.5, 37.9},
                 new double[]{128.6, 38.0}));
-        CctvReadingLookup cctv = id -> {
-            throw new AssertionError("lookup 이 호출되면 안 된다");
-        };
+        CctvReadingLookup cctv = id -> Optional.empty();
 
         var result = build(cctv, List.of(farAway)).plan(COMMAND);
 

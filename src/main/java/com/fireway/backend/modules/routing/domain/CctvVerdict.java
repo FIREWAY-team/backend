@@ -24,8 +24,14 @@ import java.util.Map;
 public record CctvVerdict(String cctvId, double effectiveWidthM,
                           Map<String, String> verdictByVehicle, double confidence) {
 
-    /** Whether this CCTV verdict passes the given vehicle id. Anything other than {@code "PASS"} is refused. */
-    public boolean passes(String vehicleId) {
-        return "PASS".equalsIgnoreCase(verdictByVehicle.get(vehicleId));
+    public String verdictFor(String vehicleId) {
+        if (verdictByVehicle == null || !Double.isFinite(effectiveWidthM) || effectiveWidthM <= 0
+                || !Double.isFinite(confidence) || confidence <= 0 || confidence > 1) return "UNKNOWN";
+        String value = verdictByVehicle.get(vehicleId);
+        if (value == null) return "UNKNOWN";
+        value = value.toUpperCase(java.util.Locale.ROOT);
+        return java.util.Set.of("PASS", "FAIL", "UNCERTAIN").contains(value) ? value : "UNKNOWN";
     }
+
+    public boolean passes(String vehicleId) { return "PASS".equals(verdictFor(vehicleId)); }
 }
