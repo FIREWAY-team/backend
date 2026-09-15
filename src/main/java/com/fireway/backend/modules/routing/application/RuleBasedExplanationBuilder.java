@@ -25,7 +25,7 @@ public class RuleBasedExplanationBuilder implements ExplanationBuilder {
         String cctvSummary;
         if (!candidate.passableForVehicle()) {
             cctvSummary = String.format(Locale.ROOT,
-                    "CCTV 판독 결과 이 차량 폭(%sm)으로 진입 불가한 골목 %d건 남음 — 이 경로는 실 진입 불가.",
+                    "차량 폭(%sm) 기준 통행 불가 또는 CCTV 미확인 골목 %d건 — 진입 경로로 추천하지 않습니다.",
                     vehicle.widthM(), stillBlocked);
         } else if (unlocked > 0) {
             cctvSummary = String.format(Locale.ROOT,

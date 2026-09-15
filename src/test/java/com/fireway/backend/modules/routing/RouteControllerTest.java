@@ -50,8 +50,8 @@ class RouteControllerTest {
                 .andExpect(jsonPath("$.vehicle_used.id").value("pump-3.5"))
                 .andExpect(jsonPath("$.vehicle_used.width_m").value(2.3))
                 .andExpect(jsonPath("$.vehicle_used.turning_radius_m").value(6.5))
-                .andExpect(jsonPath("$.warnings", hasSize(2)))
-                .andExpect(jsonPath("$.warnings[0]").value(org.hamcrest.Matchers.startsWith("valhalla_mock")))
+                .andExpect(jsonPath("$.warnings", hasSize(3)))
+                .andExpect(jsonPath("$.warnings[0]").value(org.hamcrest.Matchers.startsWith("osrm_candidates")))
                 .andExpect(jsonPath("$.warnings[1]").value(org.hamcrest.Matchers.startsWith("no_go_mock")));
         verify(planner).plan(RoutingTestFixtures.command());
     }

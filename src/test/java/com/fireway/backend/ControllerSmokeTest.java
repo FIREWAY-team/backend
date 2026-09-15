@@ -40,7 +40,7 @@ class ControllerSmokeTest {
                 new VehicleService(mock(VehicleRepository.class)),
                 new MockNoGoLookup(),
                 new MockCctvReadingLookup(),
-                new MockValhallaClient(),
+                new MockValhallaClient("https://router.project-osrm.org"),
                 new WeightedOverlapCalculator(),
                 new GoldenTimePrioritizer(),
                 new RuleBasedExplanationBuilder()

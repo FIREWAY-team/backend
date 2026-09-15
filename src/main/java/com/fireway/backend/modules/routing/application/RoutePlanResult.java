@@ -13,4 +13,13 @@ import java.util.List;
 public record RoutePlanResult(List<RouteCandidate> routes, long calcTimeMs, int kEffective,
                               double[][] overlapMatrix, String alternativesStatus,
                               int noGoConsidered, boolean valhallaMocked, boolean noGoMocked,
-                              Vehicle vehicleUsed) { }
+                              Vehicle vehicleUsed, List<CctvAssessment> cctvAssessments) {
+    public RoutePlanResult(List<RouteCandidate> routes, long calcTimeMs, int kEffective,
+            double[][] overlapMatrix, String alternativesStatus, int noGoConsidered,
+            boolean valhallaMocked, boolean noGoMocked, Vehicle vehicleUsed) {
+        this(routes, calcTimeMs, kEffective, overlapMatrix, alternativesStatus, noGoConsidered,
+                valhallaMocked, noGoMocked, vehicleUsed, List.of());
+    }
+    public record CctvAssessment(String edgeId, List<double[]> coordinates, String verdict,
+                                 String cctvId, double confidence) {}
+}
