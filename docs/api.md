@@ -122,6 +122,8 @@ curl -i http://localhost:8080/api/route \
 | GET | `/api/incidents/{incident_no}` | 신고 상세 |
 | POST | `/api/incidents/{incident_no}/routes` | 출동 경로 산출 + 판단 근거 저장 |
 | GET | `/api/incidents/{incident_no}/routes` | 저장된 경로와 근거 |
+| POST | `/api/incidents/{incident_no}/attachments` | 업로드한 사진·동영상을 신고에 첨부(존재·크기 확인) |
+| GET | `/api/incidents/{incident_no}/attachments` | 신고 첨부 목록과 조회 URL |
 | POST | `/api/files/upload-url` | 사진·동영상 업로드용 presigned URL 발급 |
 
 `POST /api/route`는 위 라우팅 섹션의 새 계약(`vehicle_id`, `from`, `to`)을 사용합니다. 낡은 `scenario_id`/`lat`/`lon` 계약은 제거되었습니다.
@@ -183,12 +185,14 @@ curl -i http://localhost:8080/api/route \
 클라이언트는 받은 `upload_url` 로 **직접 PUT** 합니다(파일 바이트는 백엔드를 거치지 않습니다).
 이때 `Content-Type` 헤더는 발급 요청에 쓴 값과 같아야 합니다 — 서명 대상이라 다르면 S3가 403 입니다.
 
-업로드가 끝나면 `key` 만 백엔드로 보냅니다. 저장하는 쪽 도메인은 DB에 넣기 전에
+업로드가 끝나면 `key` 만 백엔드로 보냅니다. 지금 key 를 받는 곳은 **신고 첨부**
+(`POST /api/incidents/{incident_no}/attachments`, 아래 참고)뿐입니다. 저장하는 쪽 도메인은 DB에 넣기 전에
 `FileUploadService.confirmUpload(key)` 로 실제 존재와 크기를 확인해야 합니다 —
 프론트의 "올렸어요" 보고만 믿으면 유령 레코드가 생깁니다.
 
-업로드 상한은 5MB 입니다. presigned PUT 자체는 크기를 막지 못하므로,
+업로드 상한은 파일 하나당 사진 5MB, 동영상 50MB 입니다. presigned PUT 자체는 크기를 막지 못하므로,
 `confirmUpload()` 가 올라온 뒤 HEAD 로 재보고 초과분은 지운 다음 422 를 돌려줍니다.
+`upload-url` 이 발급한 모양(`uploads/<날짜>/<uuid>`)이 아닌 key 도 422 입니다.
 발급 API 남용은 Nginx rate limit(IP당 분당 5회)과 S3 수명주기 규칙(`uploads/` 30일 만료)이 함께 막습니다.
 
 조회는 `FileUploadService.issueDownloadUrl(key)` 로 그때그때 만들어 내려줍니다.
@@ -242,3 +246,26 @@ DB에는 URL이 아니라 **key만** 저장합니다(버킷을 옮기거나 Clou
 - `unlocked_by_cctv` 는 CCTV 판독으로 풀린 정적 진입곤란 구간입니다.
 - **다시 호출하면 이전 결과를 대체합니다.** 차량이 바뀌면 판정이 통째로 바뀌기 때문입니다.
   산출 전에는 빈 목록을 돌려줍니다.
+
+## 신고 첨부
+
+사진·동영상은 3단계로 붙입니다.
+
+1. `POST /api/files/upload-url` 로 `upload_url` 과 `key` 를 받는다(위 "파일 업로드").
+2. `upload_url` 로 파일을 **직접 PUT** 한다. `Content-Type` 은 1에서 보낸 값과 같아야 한다.
+3. `POST /api/incidents/{incident_no}/attachments` 에 `{ "key": "uploads/2026-09-16/<uuid>" }` 를 보낸다.
+
+3의 응답(201) 예:
+
+```json
+{ "key": "uploads/2026-09-16/<uuid>", "content_type": "video/mp4", "size_bytes": 18234567,
+  "download_url": "https://<bucket>.s3.ap-northeast-2.amazonaws.com/uploads/2026-09-16/<uuid>?X-Amz-...",
+  "created_at": "2026-09-16T19:40:00" }
+```
+
+- 3에서 백엔드가 S3 에 실제로 있는지, 크기가 상한 안인지 확인합니다. 올리지 않았거나 상한을 넘으면 422 이고,
+  **상한을 넘은 파일은 S3에서 지워집니다.** 2에서 PUT 이 끝나기 전에 3을 부르면 422 입니다.
+- `content_type` · `size_bytes` 는 프론트가 보낸 값이 아니라 S3 에서 잰 값입니다.
+- 같은 `key` 를 다시 붙이면(다른 신고여도) 409 `CONFLICT` 입니다. 없는 접수번호는 404 입니다.
+- `GET /api/incidents/{incident_no}/attachments` 는 붙인 순서대로 돌려줍니다. 없으면 빈 목록입니다.
+- **`download_url` 은 10분이면 만료됩니다**(`presign-get-ttl`). 저장해 두지 말고 화면을 열 때마다 목록을 다시 부르세요.
