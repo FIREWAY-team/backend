@@ -31,7 +31,7 @@ class FileUploadTest {
     static final StorageProperties PROPERTIES = new StorageProperties(
             "fire-dispatch-uploads", "ap-northeast-2",
             Duration.ofMinutes(5), Duration.ofMinutes(10),
-            1_000L, "build/local-storage", "http://localhost:8080");
+            1_000L, 10_000L, "build/local-storage", "http://localhost:8080");
 
     FakeStorage storage;
     FileUploadService service;
@@ -73,6 +73,17 @@ class FileUploadTest {
     }
 
     @Test
+    void 동영상_mp4와_quicktime은_업로드_URL을_받는다() throws Exception {
+        for (String contentType : new String[] {"video/mp4", "video/quicktime"}) {
+            mvc.perform(post("/api/files/upload-url")
+                            .contentType("application/json")
+                            .content("{\"content_type\":\"" + contentType + "\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.key").exists());
+        }
+    }
+
+    @Test
     void key에_사용자_입력이_들어가지_않는다() {
         StoragePort.PresignedUpload upload = service.issueUploadUrl("image/png");
         assertThat(upload.key()).matches("uploads/\\d{4}-\\d{2}-\\d{2}/[0-9a-f-]{36}");
@@ -91,6 +102,32 @@ class FileUploadTest {
         assertThatThrownBy(() -> service.confirmUpload("big"))
                 .isInstanceOf(ValidationException.class);
         assertThat(storage.objects).doesNotContainKey("big");
+    }
+
+    @Test
+    void 동영상은_사진_상한을_넘어도_동영상_상한_안이면_통과한다() {
+        storage.objects.put("video", new StoragePort.StoredObject("video", 5_000L, "video/mp4"));
+
+        assertThat(service.confirmUpload("video").sizeBytes()).isEqualTo(5_000L);
+        assertThat(storage.objects).containsKey("video");
+    }
+
+    @Test
+    void 동영상도_동영상_상한을_넘으면_지우고_거절한다() {
+        storage.objects.put("big-video", new StoragePort.StoredObject("big-video", 10_001L, "video/quicktime"));
+
+        assertThatThrownBy(() -> service.confirmUpload("big-video"))
+                .isInstanceOf(ValidationException.class);
+        assertThat(storage.objects).doesNotContainKey("big-video");
+    }
+
+    @Test
+    void 타입을_모르면_사진_상한을_건다() {
+        storage.objects.put("unknown", new StoragePort.StoredObject("unknown", 1_001L, null));
+
+        assertThatThrownBy(() -> service.confirmUpload("unknown"))
+                .isInstanceOf(ValidationException.class);
+        assertThat(storage.objects).doesNotContainKey("unknown");
     }
 
     static class FakeStorage implements StoragePort {

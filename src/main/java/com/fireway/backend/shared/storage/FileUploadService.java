@@ -22,8 +22,12 @@ public class FileUploadService {
      * ⚠️ 이건 '선언한 타입'만 고정할 뿐 '내용'을 검사하지 않는다. jpg 확장자를 단 실행 파일은
      * 여전히 통과한다. 브라우저가 이 파일을 원본 그대로 실행할 수 없게, 조회는 반드시
      * presigned GET 으로만 내보낸다(버킷 퍼블릭 차단 유지).
+     *
+     * 사진과 동영상은 크기 상한이 다르다(max-upload-bytes / max-video-upload-bytes).
+     * video/quicktime 은 .mov 다(휴대폰 촬영본이 mp4 가 아니라 mov 로 오는 경우 대비).
      */
-    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+    private static final Set<String> IMAGE_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+    private static final Set<String> VIDEO_CONTENT_TYPES = Set.of("video/mp4", "video/quicktime");
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
@@ -36,7 +40,7 @@ public class FileUploadService {
     }
 
     public StoragePort.PresignedUpload issueUploadUrl(String contentType) {
-        if (!ALLOWED_CONTENT_TYPES.contains(contentType)) {
+        if (!IMAGE_CONTENT_TYPES.contains(contentType) && !VIDEO_CONTENT_TYPES.contains(contentType)) {
             throw new ValidationException("허용되지 않는 파일 형식입니다: " + contentType);
         }
         // 저장 파일명에 사용자 입력을 쓰지 않는다. 날짜 접두사는 S3 라이프사이클 규칙을 걸거나
@@ -61,12 +65,28 @@ public class FileUploadService {
         StoragePort.StoredObject object = storage.find(key)
                 .orElseThrow(() -> new ValidationException("업로드되지 않은 파일입니다: " + key));
 
-        if (object.sizeBytes() > properties.maxUploadBytes()) {
+        long maxBytes = maxBytesFor(object.contentType());
+        if (object.sizeBytes() > maxBytes) {
             storage.delete(key);
             throw new ValidationException(
-                    "파일이 너무 큽니다: %d bytes (최대 %d)".formatted(object.sizeBytes(), properties.maxUploadBytes()));
+                    "파일이 너무 큽니다: %d bytes (최대 %d)".formatted(object.sizeBytes(), maxBytes));
         }
         return object;
+    }
+
+    /**
+     * 상한은 HEAD 로 읽은 Content-Type 으로 고른다. 발급 때 서명에 넣은 값이라 클라이언트가
+     * 사진으로 발급받고 동영상 상한을 받아낼 수 없다.
+     *
+     * 모르는 타입은 작은 쪽(사진) 상한을 건다. 로컬 어댑터는 확장자 없는 key 로
+     * Files.probeContentType 을 불러 null 이 올 수 있고, 그러면 로컬에서는 5MB 넘는 동영상이 여기서 걸린다.
+     * (Set.of 는 contains(null) 에서 NPE 를 던지므로 null 을 먼저 거른다.)
+     */
+    private long maxBytesFor(String contentType) {
+        if (contentType != null && VIDEO_CONTENT_TYPES.contains(contentType)) {
+            return properties.maxVideoUploadBytes();
+        }
+        return properties.maxUploadBytes();
     }
 
     public void delete(String key) {

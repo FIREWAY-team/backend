@@ -26,7 +26,8 @@ public class LocalStorageController {
 
     public LocalStorageController(LocalStorageAdapter storage, StorageProperties properties) {
         this.storage = storage;
-        this.maxUploadBytes = properties.maxUploadBytes();
+        // 여기선 타입을 모르니 큰 쪽(동영상) 상한으로 받는다. 타입별 상한은 confirmUpload() 가 본다.
+        this.maxUploadBytes = Math.max(properties.maxUploadBytes(), properties.maxVideoUploadBytes());
     }
 
     @PutMapping(LocalStorageAdapter.URL_PREFIX + "**")
