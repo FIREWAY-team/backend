@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Service;
 
@@ -30,6 +31,14 @@ public class FileUploadService {
     private static final Set<String> VIDEO_CONTENT_TYPES = Set.of("video/mp4", "video/quicktime");
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
+    /**
+     * issueUploadUrl() 이 만드는 key 모양. 이 모양이 아니면 우리가 발급한 key 가 아니다.
+     * 확인을 통과한 key 는 도메인에 저장되고 조회 URL 이 서명되므로, 여기서 거르지 않으면
+     * uploads/ 밖의 버킷 객체를 key 로 넣어 읽어갈 수 있다.
+     */
+    private static final Pattern UPLOAD_KEY =
+            Pattern.compile("uploads/\\d{4}-\\d{2}-\\d{2}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
     private final StoragePort storage;
     private final StorageProperties properties;
@@ -62,6 +71,9 @@ public class FileUploadService {
      * 밀어넣을 수 있으므로, 올라온 뒤에 재보고 초과분은 지우고 거절한다.
      */
     public StoragePort.StoredObject confirmUpload(String key) {
+        if (key == null || !UPLOAD_KEY.matcher(key).matches()) {
+            throw new ValidationException("발급받은 업로드 key 가 아닙니다: " + key);
+        }
         StoragePort.StoredObject object = storage.find(key)
                 .orElseThrow(() -> new ValidationException("업로드되지 않은 파일입니다: " + key));
 

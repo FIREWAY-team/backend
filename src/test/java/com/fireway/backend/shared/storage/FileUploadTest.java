@@ -89,45 +89,71 @@ class FileUploadTest {
         assertThat(upload.key()).matches("uploads/\\d{4}-\\d{2}-\\d{2}/[0-9a-f-]{36}");
     }
 
+    /** issueUploadUrl 이 만드는 것과 같은 모양의 key. confirmUpload 는 이 모양만 받는다. */
+    private String uploaded(long sizeBytes, String contentType) {
+        String key = service.issueUploadUrl("image/jpeg").key();
+        storage.objects.put(key, new StoragePort.StoredObject(key, sizeBytes, contentType));
+        return key;
+    }
+
     @Test
     void 올라오지_않은_key는_확인에서_걸린다() {
-        assertThatThrownBy(() -> service.confirmUpload("uploads/2026-09-09/없는키"))
-                .isInstanceOf(ValidationException.class);
+        String key = service.issueUploadUrl("image/jpeg").key();   // 발급만 받고 올리지 않았다
+
+        assertThatThrownBy(() -> service.confirmUpload(key))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("업로드되지 않은");
+    }
+
+    // 확인을 통과한 key 는 저장되고 조회 URL 이 서명된다. 발급 모양이 아닌 key 로 버킷의 다른 객체를 읽어가면 안 된다.
+    @Test
+    void 발급한_모양이_아닌_key는_S3를_보기_전에_거절한다() {
+        storage.objects.put("private/report.pdf", new StoragePort.StoredObject("private/report.pdf", 10L, "application/pdf"));
+
+        for (String key : new String[] {"private/report.pdf", "uploads/2026-09-09/../../private/report.pdf", "uploads/2026-09-09/없는키", ""}) {
+            assertThatThrownBy(() -> service.confirmUpload(key))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("발급받은 업로드 key 가 아닙니다");
+        }
+        assertThatThrownBy(() -> service.confirmUpload(null)).isInstanceOf(ValidationException.class);
     }
 
     @Test
     void 크기를_넘긴_파일은_지우고_거절한다() {
-        storage.objects.put("big", new StoragePort.StoredObject("big", 1_001L, "image/jpeg"));
+        String key = uploaded(1_001L, "image/jpeg");
 
-        assertThatThrownBy(() -> service.confirmUpload("big"))
-                .isInstanceOf(ValidationException.class);
-        assertThat(storage.objects).doesNotContainKey("big");
+        assertThatThrownBy(() -> service.confirmUpload(key))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("너무 큽니다");
+        assertThat(storage.objects).doesNotContainKey(key);
     }
 
     @Test
     void 동영상은_사진_상한을_넘어도_동영상_상한_안이면_통과한다() {
-        storage.objects.put("video", new StoragePort.StoredObject("video", 5_000L, "video/mp4"));
+        String key = uploaded(5_000L, "video/mp4");
 
-        assertThat(service.confirmUpload("video").sizeBytes()).isEqualTo(5_000L);
-        assertThat(storage.objects).containsKey("video");
+        assertThat(service.confirmUpload(key).sizeBytes()).isEqualTo(5_000L);
+        assertThat(storage.objects).containsKey(key);
     }
 
     @Test
     void 동영상도_동영상_상한을_넘으면_지우고_거절한다() {
-        storage.objects.put("big-video", new StoragePort.StoredObject("big-video", 10_001L, "video/quicktime"));
+        String key = uploaded(10_001L, "video/quicktime");
 
-        assertThatThrownBy(() -> service.confirmUpload("big-video"))
-                .isInstanceOf(ValidationException.class);
-        assertThat(storage.objects).doesNotContainKey("big-video");
+        assertThatThrownBy(() -> service.confirmUpload(key))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("너무 큽니다");
+        assertThat(storage.objects).doesNotContainKey(key);
     }
 
     @Test
     void 타입을_모르면_사진_상한을_건다() {
-        storage.objects.put("unknown", new StoragePort.StoredObject("unknown", 1_001L, null));
+        String key = uploaded(1_001L, null);
 
-        assertThatThrownBy(() -> service.confirmUpload("unknown"))
-                .isInstanceOf(ValidationException.class);
-        assertThat(storage.objects).doesNotContainKey("unknown");
+        assertThatThrownBy(() -> service.confirmUpload(key))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("너무 큽니다");
+        assertThat(storage.objects).doesNotContainKey(key);
     }
 
     static class FakeStorage implements StoragePort {
