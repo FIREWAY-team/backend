@@ -13,6 +13,10 @@ public interface IncidentRepository {
 
     Optional<Incident> findByNo(String incidentNo);
 
-    /** 그날 접수된 건수. 접수번호 일련번호를 매기는 데 쓴다. */
-    int countReceivedOn(LocalDate date);
+    /**
+     * 그날 실제로 쓴 접수번호 일련번호의 최댓값. 아직 없으면 0.
+     * 건수가 아니라 최댓값인 이유는, 행이 하나라도 지워졌을 때 건수는 뒤로 돌아가지만
+     * 이미 발급한 번호는 그대로이기 때문이다. 뒤로 돌아가면 같은 번호를 다시 발급한다.
+     */
+    int lastSequenceOn(LocalDate date);
 }

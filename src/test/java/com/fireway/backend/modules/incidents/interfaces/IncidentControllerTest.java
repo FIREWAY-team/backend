@@ -35,7 +35,7 @@ class IncidentControllerTest {
         public Optional<Incident> findByNo(String no) {
             return rows.stream().filter(r -> r.incidentNo().equals(no)).findFirst();
         }
-        public int countReceivedOn(LocalDate d) { return rows.size(); }
+        public int lastSequenceOn(LocalDate d) { return rows.size(); }
     }
 
     @BeforeEach void setUp() {

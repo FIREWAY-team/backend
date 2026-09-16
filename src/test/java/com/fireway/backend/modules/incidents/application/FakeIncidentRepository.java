@@ -12,6 +12,8 @@ class FakeIncidentRepository implements IncidentRepository {
     private long seq = 0;
     /** 다음 insert 를 중복으로 실패시킬 횟수. 번호 재시도를 검증하는 데 쓴다. */
     int failNextInserts = 0;
+    /** 발급한 번호는 지워도 남는다. 어댑터의 MAX(일련번호) 와 같은 성질이다. */
+    private final Map<String, Integer> issued = new HashMap<>();
 
     @Override public long insert(Incident incident) {
         if (failNextInserts > 0) { failNextInserts--; throw new DuplicateKeyException("uk_incidents_no"); }
@@ -20,6 +22,7 @@ class FakeIncidentRepository implements IncidentRepository {
         }
         long id = ++seq;
         rows.add(incident.withId(id));
+        remember(incident.incidentNo());
         return id;
     }
     @Override public List<Incident> findAll(IncidentStatus status) {
@@ -32,7 +35,16 @@ class FakeIncidentRepository implements IncidentRepository {
     @Override public Optional<Incident> findByNo(String no) {
         return rows.stream().filter(r -> r.incidentNo().equals(no)).findFirst();
     }
-    @Override public int countReceivedOn(LocalDate date) {
-        return (int) rows.stream().filter(r -> r.receivedAt().toLocalDate().equals(date)).count();
+    @Override public int lastSequenceOn(LocalDate date) {
+        return issued.getOrDefault(Incident.numberPrefix(date), 0);
+    }
+
+    /** 행을 지워도 번호는 되돌아가지 않아야 한다. 그 성질을 검증하는 데 쓴다. */
+    void deleteAll() { rows.clear(); }
+
+    private void remember(String incidentNo) {
+        String prefix = incidentNo.substring(0, Incident.NUMBER_PREFIX_LENGTH);
+        int n = Integer.parseInt(incidentNo.substring(Incident.NUMBER_PREFIX_LENGTH));
+        issued.merge(prefix, n, Math::max);
     }
 }

@@ -41,7 +41,7 @@ class IncidentAttachmentControllerTest {
                             LocalDateTime.now(고정시계), null))
                     : Optional.empty();
         }
-        public int countReceivedOn(LocalDate d) { return 0; }
+        public int lastSequenceOn(LocalDate d) { return 0; }
     }
     private static final class Attachments implements IncidentAttachmentRepository {
         final List<IncidentAttachment> rows = new ArrayList<>();
