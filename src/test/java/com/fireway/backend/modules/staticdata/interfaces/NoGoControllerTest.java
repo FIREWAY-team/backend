@@ -1,5 +1,6 @@
 package com.fireway.backend.modules.staticdata.interfaces;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +30,9 @@ class NoGoControllerTest {
         var converter = new MappingJackson2HttpMessageConverter(
                 new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE));
         return MockMvcBuilders.standaloneSetup(new NoGoController(new NoGoAreaService(() -> List.of(areas))))
-                .setMessageConverters(converter).build();
+                .setMessageConverters(converter)
+                .setControllerAdvice(new com.fireway.backend.shared.exception.GlobalExceptionHandler())
+                .build();
     }
 
     @Test void 좌표를_lon_lat_순서로_내려준다() throws Exception {
@@ -61,5 +64,40 @@ class NoGoControllerTest {
 
     @Test void 데이터가_없어도_200_이다() throws Exception {
         mvc().perform(get("/api/no_go")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+    }
+
+    // 전건이 1,276건이라 지도를 움직일 때마다 다 내려주면 안 된다. 화면 범위만 받는다.
+    @Test void bbox_밖의_구간은_빠진다() throws Exception {
+        mvc(LINE, GHOST).perform(get("/api/no_go").param("bbox", "127.140,37.435,127.145,37.440"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].ext_id").value("eunhaeng1-impassable-001"));
+    }
+
+    /**
+     * bbox 는 GeoJSON 과 같은 lon 먼저 순서다. 파싱이 lat 먼저로 뒤집히면 이 범위가
+     * 아무것도 못 잡아 0건이 된다 — 예외 없이 조용히 비므로 테스트로 못을 박는다.
+     */
+    @Test void bbox_는_lon_이_먼저다() throws Exception {
+        mvc(LINE).perform(get("/api/no_go").param("bbox", "127.140,37.435,127.145,37.440"))
+                .andExpect(jsonPath("$.length()").value(1));
+    }
+
+    @Test void bbox_가_망가지면_422_다() throws Exception {
+        mvc(LINE).perform(get("/api/no_go").param("bbox", "127.140,37.435,127.145"))
+                .andExpect(status().isUnprocessableEntity());
+        mvc(LINE).perform(get("/api/no_go").param("bbox", "동쪽,37.435,127.145,37.440"))
+                .andExpect(status().isUnprocessableEntity());
+        // 최소값이 최대값보다 큰 경우. BoundingBox 생성자가 막는데 500 으로 새면 안 된다.
+        mvc(LINE).perform(get("/api/no_go").param("bbox", "127.145,37.440,127.140,37.435"))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    // 재임포트 전에는 안 바뀌는 정적 데이터다. 지도를 움직일 때마다 같은 응답을 다시 받지 않게 한다.
+    @Test void 캐시_헤더를_붙인다() throws Exception {
+        mvc(LINE).perform(get("/api/no_go"))
+                .andExpect(header().string("Cache-Control", "max-age=300, public"));
+        mvc(LINE).perform(get("/api/no_go").param("bbox", "127.140,37.435,127.145,37.440"))
+                .andExpect(header().string("Cache-Control", "max-age=300, public"));
     }
 }
