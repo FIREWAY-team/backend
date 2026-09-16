@@ -69,14 +69,15 @@ public class MockValhallaClient implements ValhallaClient {
 
         long deadline = System.nanoTime() + TOTAL_BUDGET.toNanos();
         List<RouteCandidate> candidates = new ArrayList<>();
-        int completed = 0;
-        for (var search : searches) {
+        boolean baseSucceeded = false;
+        for (int i = 0; i < searches.size(); i++) {
+            var search = searches.get(i);
             long leftNanos = deadline - System.nanoTime();
             // 예산이 끝났어도 이미 받아둔 응답은 버리지 않는다. 기다릴 시간이 없을 뿐이다.
             if (leftNanos <= 0 && !search.isDone()) { search.cancel(true); continue; }
             try {
                 candidates.addAll(search.get(Math.max(leftNanos, 0), TimeUnit.NANOSECONDS));
-                completed++;
+                if (i == 0) baseSucceeded = true;
             } catch (InterruptedException error) {
                 Thread.currentThread().interrupt();
                 break;
@@ -85,7 +86,12 @@ public class MockValhallaClient implements ValhallaClient {
                 log.warn("OSRM route search failed: {}", error.getMessage());
             }
         }
-        if (completed == 0) throw new ExternalSystemException("도로 경로 조회에 실패했습니다.");
+        // 기본 경로를 물어보지도 못했는데 후보까지 없다면 "우회로가 없다"가 아니라 "못 물어봤다"다.
+        // 이걸 빈 배열로 내보내면 프론트가 라우터 장애를 진입 불가로 그린다. 502 로 구분한다.
+        // 기본 경로가 실패해도 경유지 후보가 잡혔다면 그건 실제 도로이므로 그대로 쓴다.
+        if (candidates.isEmpty() && !baseSucceeded) {
+            throw new ExternalSystemException("도로 경로 조회에 실패했습니다.");
+        }
         return candidates;
     }
 

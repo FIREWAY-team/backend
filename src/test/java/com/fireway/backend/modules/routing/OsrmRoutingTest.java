@@ -85,4 +85,24 @@ class OsrmRoutingTest {
                     .isInstanceOf(ExternalSystemException.class);
         } finally { server.stop(0); }
     }
+
+    // OSRM 이 "이 좌표 사이에 길이 없다"고 답한 것과 OSRM 을 못 불렀다는 것은 다른 상황이다.
+    // 전자는 정상 응답(빈 후보), 후자는 502 여야 프론트가 라우터 장애를 진입 불가로 안 그린다.
+    @Test
+    void no_route_answer_is_not_the_same_as_a_broken_router() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/route", exchange -> {
+            byte[] body = "{\"code\":\"NoRoute\",\"routes\":[]}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            var client = new MockValhallaClient("http://127.0.0.1:" + server.getAddress().getPort());
+            // 라우터는 멀쩡히 답했다. 후보가 없을 뿐이라 예외가 아니라 빈 목록이다.
+            assertThat(client.route(new RoutePlanRequest(RoutingTestFixtures.FROM,
+                    RoutingTestFixtures.TO, RoutingTestFixtures.VEHICLE, List.of(), 3))).isEmpty();
+        } finally { server.stop(0); }
+    }
 }
