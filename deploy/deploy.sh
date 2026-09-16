@@ -51,6 +51,13 @@ sudo -n true 2>/dev/null || {
   exit 1
 }
 
+# 교체 중에는 backend 가 두 개 뜬다. 램 1GB 로는 스왑 없이 그 구간을 못 넘긴다.
+# 막지는 않는다 — 트래픽이 한산하면 넘어가기도 한다. 다만 조용히 죽는 건 막는다.
+if ! swapon --show | grep -q .; then
+  echo "경고: 스왑이 없다. 교체 중 backend 두 개가 뜨는 30초 동안 OOM 킬 위험이 있다." >&2
+  echo "      sudo bash $DEPLOY_DIR/backend/deploy/setup-bluegreen.sh 가 2G 스왑을 잡아준다." >&2
+fi
+
 cd "$DEPLOY_DIR"
 
 # ------------------------------------------------------------------
