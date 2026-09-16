@@ -122,7 +122,7 @@ curl -i http://localhost:8080/api/route \
 | GET | `/api/incidents/{incident_no}` | 신고 상세 |
 | POST | `/api/incidents/{incident_no}/routes` | 출동 경로 산출 + 판단 근거 저장 |
 | GET | `/api/incidents/{incident_no}/routes` | 저장된 경로와 근거 |
-| POST | `/api/files/upload-url` | 이미지 업로드용 presigned URL 발급 |
+| POST | `/api/files/upload-url` | 사진·동영상 업로드용 presigned URL 발급 |
 
 `POST /api/route`는 위 라우팅 섹션의 새 계약(`vehicle_id`, `from`, `to`)을 사용합니다. 낡은 `scenario_id`/`lat`/`lon` 계약은 제거되었습니다.
 
@@ -169,7 +169,8 @@ curl -i http://localhost:8080/api/route \
 ## 파일 업로드
 
 `POST /api/files/upload-url` 요청 예: `{ "content_type": "image/jpeg" }`.
-허용 타입은 `image/jpeg`, `image/png`, `image/webp` 이고 그 밖은 422 입니다.
+허용 타입은 사진 `image/jpeg`, `image/png`, `image/webp` (최대 5MB) 와
+동영상 `video/mp4`, `video/quicktime` (최대 50MB) 이고 그 밖은 422 입니다.
 
 응답 예:
 

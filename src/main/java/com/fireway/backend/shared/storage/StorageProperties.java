@@ -19,6 +19,7 @@ public record StorageProperties(
         @DefaultValue("5m") Duration presignPutTtl,
         @DefaultValue("10m") Duration presignGetTtl,
         @DefaultValue("10485760") long maxUploadBytes,
+        @DefaultValue("52428800") long maxVideoUploadBytes,
         @DefaultValue("build/local-storage") String localDir,
         @DefaultValue("http://localhost:8080") String localBaseUrl) {
 }

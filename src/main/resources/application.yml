@@ -41,7 +41,8 @@ app:
     #    이건 남용 방지의 한 겹일 뿐이다. 발급 API 자체의 상한은 Nginx rate limit
     #    (/api/files/upload-url, IP당 분당 5회)이 잡고, 그래도 쌓인 것은 S3 수명주기 규칙
     #    (uploads/ 접두사 30일 만료)이 치운다. 셋 다 있어야 상한이 생긴다.
-    max-upload-bytes: 5242880   # 5MB — 신고 사진 기준
+    max-upload-bytes: 5242880          # 5MB — 사진(image/jpeg·png·webp)
+    max-video-upload-bytes: 52428800   # 50MB — 동영상(video/mp4·quicktime)
 
     # 아래 둘은 로컬(prod 아님)에서만 쓰인다. build/ 아래라 .gitignore가 이미 걸러준다.
     local-dir: build/local-storage
