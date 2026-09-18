@@ -23,4 +23,10 @@ import org.springframework.stereotype.Service;
      * 전건을 넘길 이유가 없다. 호출 쪽이 경로를 감싸는 bbox 를 준다.
      */
     public List<NoGoArea> forRouting(BoundingBox box) { return repository.findRoutableWithin(box); }
+
+    /**
+     * 지도 표시용 중 화면 범위 안의 것만. 전건이 1,276건이라 지도를 움직일 때마다
+     * 전부 내려줄 이유가 없다. forRouting(box) 와 달리 unverified 도 포함한다.
+     */
+    public List<NoGoArea> findAll(BoundingBox box) { return repository.findAllWithin(box); }
 }

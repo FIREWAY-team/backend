@@ -37,6 +37,7 @@ services:
           - backend
     # 램이 2GB다. 교체할 때 두 개가 같이 뜨므로 한쪽이 다 먹으면 안 된다.
     # 힙 768m + 힙 외(메타스페이스·스레드 스택)까지 1100m 안에 들어간다.
+    # 겹치는 구간은 setup-bluegreen.sh 가 잡아둔 스왑이 받아준다 — swapon --show 로 확인.
     mem_limit: 1100m
     logging:
       driver: json-file
@@ -72,6 +73,9 @@ services:
     # 별칭 `backend` 로 붙는다. 어느 색이 떠 있든 상관없다.
     environment:
       BACKEND_API_URL: http://backend:8080
+    # 상한이 없으면 Next.js 가 남는 램을 다 잡아, 교체 중 backend 두 개가 뜰 때
+    # OOM 킬러가 frontend 가 아니라 backend 를 고를 수 있다. 상한을 박아 그 선택을 막는다.
+    mem_limit: 384m
     logging:
       driver: json-file
       options:

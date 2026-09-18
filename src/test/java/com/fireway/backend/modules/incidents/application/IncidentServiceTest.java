@@ -3,6 +3,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fireway.backend.modules.incidents.domain.Incident;
 import com.fireway.backend.modules.incidents.domain.IncidentStatus;
+import com.fireway.backend.shared.exception.ConflictException;
 import com.fireway.backend.shared.exception.NotFoundException;
 import com.fireway.backend.shared.exception.ValidationException;
 import java.time.*;
@@ -83,5 +84,23 @@ class IncidentServiceTest {
 
     @Test void 요약이_없으면_빈_문자열로_저장한다() {
         assertThat(service.receive("주소", LAT, LON, null).summary()).isEmpty();
+    }
+
+    /**
+     * 예전 채번은 그날 건수를 세서 +1 했다. 행이 지워지면 건수가 뒤로 돌아가 이미 쓴 번호를
+     * 다시 발급했고, 재시도해도 같은 번호만 나와 그날 접수가 통째로 막혔다.
+     */
+    @Test void 지운_뒤_접수해도_번호가_뒤로_돌아가지_않는다() {
+        service.receive("주소1", LAT, LON, null);
+        service.receive("주소2", LAT, LON, null);
+        repo.deleteAll();
+        assertThat(service.receive("주소3", LAT, LON, null).incidentNo()).isEqualTo("2026-0915-0003");
+    }
+
+    // 재시도가 다 떨어지는 건 동시 접수가 몰린 것이지 서버가 고장난 게 아니다. 500 이 아니라 409 다.
+    @Test void 번호_재시도가_소진되면_409_로_이어진다() {
+        repo.failNextInserts = 99;
+        assertThatThrownBy(() -> service.receive("주소", LAT, LON, null))
+                .isInstanceOf(ConflictException.class);
     }
 }

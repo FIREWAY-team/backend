@@ -4,13 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fireway.backend.modules.routing.application.port.*;
 import com.fireway.backend.modules.routing.domain.RouteCandidate;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.*;
 import com.fireway.backend.modules.routing.domain.Coordinate;
 import com.fireway.backend.shared.exception.ExternalSystemException;
 import org.slf4j.Logger;
@@ -23,12 +25,32 @@ import org.springframework.stereotype.Component;
 @Profile("!valhalla")
 public class MockValhallaClient implements ValhallaClient {
     private static final Logger log = LoggerFactory.getLogger(MockValhallaClient.class);
+
+    /**
+     * 한 요청이 OSRM 을 부르는 횟수는 기본 경로 1 + 경유지 후보 이만큼이다.
+     * 기본 대상이 공개 데모 서버(router.project-osrm.org)라 호출 수를 아끼지 않으면
+     * fair-use 정책에 걸려 통째로 차단당한다. 자체 OSRM 을 띄웠다면 늘려도 된다.
+     */
+    private static final int MAX_VIA_SEARCHES = 2;
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(6);
+    /** 개별 요청이 6초씩이라도 한 번의 경로 조회가 여기를 넘기지 않는다. 늦은 후보는 버린다. */
+    private static final Duration TOTAL_BUDGET = Duration.ofSeconds(8);
+
+    // 응답 처리를 전용 풀에서 돌린다. ForkJoinPool.commonPool 은 병렬도가 (코어수-1)이라
+    // 2코어 장비에서 1이 되고, 거기에 태우면 후보 조회가 동시에 나가지 않고 줄을 선다.
+    private static final ExecutorService HTTP_POOL = Executors.newFixedThreadPool(8, runnable -> {
+        Thread thread = new Thread(runnable, "osrm-http");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(3)).executor(HTTP_POOL).build();
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private final String baseUrl;
     public MockValhallaClient(@org.springframework.beans.factory.annotation.Value("${OSRM_URL:https://router.project-osrm.org}") String baseUrl) {
         this.baseUrl = baseUrl;
     }
-    private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
-    private static final ObjectMapper JSON = new ObjectMapper();
 
     @Override
     public List<RouteCandidate> route(RoutePlanRequest request) {
@@ -37,42 +59,65 @@ public class MockValhallaClient implements ValhallaClient {
                     double[] point = p.pathAsLonLat().get(p.pathAsLonLat().size() / 2);
                     return Math.hypot(point[0] - request.to().lon(), point[1] - request.to().lat());
                 }))
-                .limit(6).map(p -> p.pathAsLonLat().get(p.pathAsLonLat().size() / 2))
+                .limit(MAX_VIA_SEARCHES).map(p -> p.pathAsLonLat().get(p.pathAsLonLat().size() / 2))
                 .map(p -> new Coordinate(p[1], p[0])).toList();
         List<CompletableFuture<List<RouteCandidate>>> searches = new ArrayList<>();
+        // 기본 경로를 맨 앞에 둔다. 예산을 가장 먼저, 가장 많이 받아야 하는 후보다.
         searches.add(search(request, null));
         // Bounded candidate search via CCTV-cleared roads; only real OSRM geometries are returned.
         for (Coordinate via : vias) searches.add(search(request, via));
+
+        long deadline = System.nanoTime() + TOTAL_BUDGET.toNanos();
         List<RouteCandidate> candidates = new ArrayList<>();
-        int completed = 0;
-        for (var search : searches) {
-            try { candidates.addAll(search.join()); completed++; }
-            catch (RuntimeException error) { log.warn("OSRM route search failed: {}", error.getMessage()); }
+        boolean baseSucceeded = false;
+        for (int i = 0; i < searches.size(); i++) {
+            var search = searches.get(i);
+            long leftNanos = deadline - System.nanoTime();
+            // 예산이 끝났어도 이미 받아둔 응답은 버리지 않는다. 기다릴 시간이 없을 뿐이다.
+            if (leftNanos <= 0 && !search.isDone()) { search.cancel(true); continue; }
+            try {
+                candidates.addAll(search.get(Math.max(leftNanos, 0), TimeUnit.NANOSECONDS));
+                if (i == 0) baseSucceeded = true;
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (ExecutionException | TimeoutException error) {
+                search.cancel(true);
+                log.warn("OSRM route search failed: {}", error.getMessage());
+            }
         }
-        if (completed == 0) throw new ExternalSystemException("도로 경로 조회에 실패했습니다.");
+        // 기본 경로를 물어보지도 못했는데 후보까지 없다면 "우회로가 없다"가 아니라 "못 물어봤다"다.
+        // 이걸 빈 배열로 내보내면 프론트가 라우터 장애를 진입 불가로 그린다. 502 로 구분한다.
+        // 기본 경로가 실패해도 경유지 후보가 잡혔다면 그건 실제 도로이므로 그대로 쓴다.
+        if (candidates.isEmpty() && !baseSucceeded) {
+            throw new ExternalSystemException("도로 경로 조회에 실패했습니다.");
+        }
         return candidates;
     }
 
     private CompletableFuture<List<RouteCandidate>> search(RoutePlanRequest request, Coordinate via) {
-        return CompletableFuture.supplyAsync(() -> {
-            try { return osrmRoute(request, via); }
-            catch (Exception error) { throw new java.util.concurrent.CompletionException(error); }
-        });
+        // 블로킹 send 와 달리 sendAsync 는 스레드를 붙잡지 않는다. 후보 조회가 실제로 동시에 나간다.
+        return HTTP.sendAsync(osrmRequest(request, via), HttpResponse.BodyHandlers.ofString())
+                .thenApply(response -> parse(request, via, response));
     }
 
-    private List<RouteCandidate> osrmRoute(RoutePlanRequest request, Coordinate via) throws Exception {
+    private HttpRequest osrmRequest(RoutePlanRequest request, Coordinate via) {
         String coords = String.format(Locale.ROOT, "%f,%f;", request.from().lon(), request.from().lat())
                 + (via == null ? "" : String.format(Locale.ROOT, "%f,%f;", via.lon(), via.lat()))
                 + String.format(Locale.ROOT, "%f,%f", request.to().lon(), request.to().lat());
         URI uri = URI.create(baseUrl + "/route/v1/driving/" + coords
                 + "?overview=full&geometries=geojson&alternatives=true");
-        HttpResponse<String> res = HTTP.send(HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(6)).GET().build(),
-                HttpResponse.BodyHandlers.ofString());
-        if (res.statusCode() != 200) throw new RuntimeException("OSRM " + res.statusCode());
-        JsonNode root = JSON.readTree(res.body());
+        return HttpRequest.newBuilder(uri).timeout(REQUEST_TIMEOUT).GET().build();
+    }
+
+    private List<RouteCandidate> parse(RoutePlanRequest request, Coordinate via, HttpResponse<String> res) {
+        if (res.statusCode() != 200) throw new IllegalStateException("OSRM " + res.statusCode());
+        JsonNode root;
+        try { root = JSON.readTree(res.body()); }
+        catch (IOException error) { throw new UncheckedIOException(error); }
         JsonNode routes = root.path("routes");
         if ("NoRoute".equals(root.path("code").asText())) return List.of();
-        if (!routes.isArray() || routes.isEmpty()) throw new RuntimeException("no OSRM routes");
+        if (!routes.isArray() || routes.isEmpty()) throw new IllegalStateException("no OSRM routes");
         // A waypoint snapped to an adjacent road is not evidence of traversing the cleared alley.
         if (via != null && root.path("waypoints").path(1).path("distance").asDouble(Double.MAX_VALUE) > 20)
             return List.of();

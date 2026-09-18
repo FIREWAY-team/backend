@@ -23,4 +23,15 @@ public interface NoGoAreaRepository {
                 .filter(area -> area.path().stream().anyMatch(box::contains))
                 .toList();
     }
+
+    /**
+     * 범위 안의 전 구간. 지도 표시용이라 verification_status 로 거르지 않는다 —
+     * unverified 구간도 화면에는 보여야 하고, 프론트가 상태로 구분한다.
+     * 기본 구현은 메모리에서 거르고, 실제 어댑터는 공간 인덱스를 탄다.
+     */
+    default List<NoGoArea> findAllWithin(BoundingBox box) {
+        return findAll().stream()
+                .filter(area -> area.path().stream().anyMatch(box::contains))
+                .toList();
+    }
 }

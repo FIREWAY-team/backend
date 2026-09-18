@@ -28,8 +28,13 @@ import org.springframework.stereotype.Component;
             "SELECT " + COLUMNS + " FROM incidents ORDER BY received_at DESC, id DESC";
     private static final String FIND_BY_NO =
             "SELECT " + COLUMNS + " FROM incidents WHERE incident_no = ?";
-    private static final String COUNT_ON_DATE =
-            "SELECT COUNT(*) FROM incidents WHERE received_at >= ? AND received_at < ?";
+    // 건수가 아니라 이미 쓴 번호의 최댓값을 본다. COUNT(*) 로 세면 행이 하나라도 지워졌을 때
+    // 발급이 뒤로 돌아가 같은 번호를 다시 내주고, 유니크 키에 계속 막혀 그날 접수가 통째로 멈춘다.
+    // LIKE 는 앞자리가 고정이라 uk_incidents_no 를 범위 스캔으로 탄다.
+    private static final String MAX_SEQ_ON_DATE = """
+            SELECT COALESCE(MAX(CAST(SUBSTRING(incident_no, %d) AS UNSIGNED)), 0)
+              FROM incidents WHERE incident_no LIKE ?
+            """.formatted(Incident.NUMBER_PREFIX_LENGTH + 1);
 
     private final JdbcTemplate jdbc;
     public IncidentRepositoryAdapter(JdbcTemplate jdbc) { this.jdbc = jdbc; }
@@ -62,9 +67,8 @@ import org.springframework.stereotype.Component;
         return jdbc.query(FIND_BY_NO, IncidentRepositoryAdapter::mapRow, incidentNo).stream().findFirst();
     }
 
-    @Override public int countReceivedOn(LocalDate date) {
-        Integer n = jdbc.queryForObject(COUNT_ON_DATE, Integer.class,
-                Timestamp.valueOf(date.atStartOfDay()), Timestamp.valueOf(date.plusDays(1).atStartOfDay()));
+    @Override public int lastSequenceOn(LocalDate date) {
+        Integer n = jdbc.queryForObject(MAX_SEQ_ON_DATE, Integer.class, Incident.numberPrefix(date) + "%");
         return n == null ? 0 : n;
     }
 

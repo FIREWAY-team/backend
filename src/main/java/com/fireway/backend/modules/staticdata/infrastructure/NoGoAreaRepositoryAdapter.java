@@ -26,6 +26,11 @@ import org.springframework.stereotype.Component;
                AND MBRIntersects(geom, ST_GeomFromText(?, 4326, 'axis-order=long-lat'))
              ORDER BY id
             """;
+    // 지도 표시용이라 verification_status 로 거르지 않는다. 인덱스는 같은 SPATIAL 을 탄다.
+    private static final String FIND_ALL_WITHIN = SELECT + """
+             WHERE MBRIntersects(geom, ST_GeomFromText(?, 4326, 'axis-order=long-lat'))
+             ORDER BY id
+            """;
 
     private final JdbcTemplate jdbc;
     public NoGoAreaRepositoryAdapter(JdbcTemplate jdbc) { this.jdbc = jdbc; }
@@ -43,6 +48,11 @@ import org.springframework.stereotype.Component;
     @Override public List<NoGoArea> findRoutableWithin(BoundingBox box) {
         return jdbc.query(FIND_ROUTABLE_WITHIN, NoGoAreaRepositoryAdapter::mapRow,
                 NoGoArea.OK, box.toPolygonWkt());
+    }
+
+    /** 위와 같은 축 순서(long-lat)다. 상태 필터만 없다. */
+    @Override public List<NoGoArea> findAllWithin(BoundingBox box) {
+        return jdbc.query(FIND_ALL_WITHIN, NoGoAreaRepositoryAdapter::mapRow, box.toPolygonWkt());
     }
 
     private static NoGoArea mapRow(ResultSet rs, int rowNum) throws SQLException {
