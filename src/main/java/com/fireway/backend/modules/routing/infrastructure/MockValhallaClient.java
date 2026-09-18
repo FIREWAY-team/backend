@@ -43,8 +43,13 @@ public class MockValhallaClient implements ValhallaClient {
         thread.setDaemon(true);
         return thread;
     });
+    // HTTP/1.1 강제 · router.project-osrm.org 에 HTTP/2 로 붙으면 응답 프레임을 못 받고 대기가 늘어
+    // 8s TOTAL_BUDGET 안에 base 마저 못 끝난다. 공개 OSRM 은 1.1 로 충분. 자체 OSRM 이면 이 값을
+    // 다시 검토.
     private static final HttpClient HTTP = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(3)).executor(HTTP_POOL).build();
+            .connectTimeout(Duration.ofSeconds(3))
+            .version(HttpClient.Version.HTTP_1_1)
+            .executor(HTTP_POOL).build();
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final String baseUrl;
@@ -107,7 +112,11 @@ public class MockValhallaClient implements ValhallaClient {
                 + String.format(Locale.ROOT, "%f,%f", request.to().lon(), request.to().lat());
         URI uri = URI.create(baseUrl + "/route/v1/driving/" + coords
                 + "?overview=full&geometries=geojson&alternatives=true");
-        return HttpRequest.newBuilder(uri).timeout(REQUEST_TIMEOUT).GET().build();
+        // User-Agent 명시 · 공개 OSRM 이 익명 요청을 fair-use 차단하는 경우가 있다.
+        return HttpRequest.newBuilder(uri).timeout(REQUEST_TIMEOUT)
+                .header("User-Agent", "fireroad-router/1.0 (contact: FIREWAY-team)")
+                .header("Accept", "application/json")
+                .GET().build();
     }
 
     private List<RouteCandidate> parse(RoutePlanRequest request, Coordinate via, HttpResponse<String> res) {
