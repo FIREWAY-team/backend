@@ -16,7 +16,7 @@
 # 실패하면 새로 띄운 쪽만 정리하고 끝난다. 다운타임이 없다.
 #
 # 주의: 서버에서 docker build 를 돌리지 말 것.
-#       램이 1GB(t3.micro)뿐이라 다른 컨테이너가 OOM 으로 죽는다.
+#       램이 2GB(t3.small)뿐이라 다른 컨테이너가 OOM 으로 죽는다.
 
 set -euo pipefail
 

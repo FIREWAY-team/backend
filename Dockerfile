@@ -1,6 +1,6 @@
 # ============================================================
 # build stage — 이미지 빌드는 GitHub Actions에서 돈다.
-# 서버(t3.micro, 램 1GB)에서 직접 빌드하면 다른 컨테이너가 OOM으로 죽는다.
+# 서버(t3.small, 램 2GB)에서 직접 빌드하면 다른 컨테이너가 OOM으로 죽는다.
 # ============================================================
 FROM eclipse-temurin:17-jdk-alpine AS build
 WORKDIR /app
@@ -29,8 +29,9 @@ USER app
 
 EXPOSE 8080
 
-# 서버 램이 1GB뿐이라 힙을 명시적으로 묶는다.
-# 컨테이너 실사용은 힙 + 메타스페이스 + 스레드 스택이라 384m보다 늘 크다.
-ENV JAVA_OPTS="-Xms256m -Xmx384m -XX:MaxMetaspaceSize=128m"
+# 서버 램이 2GB뿐이라 힙을 명시적으로 묶는다.
+# 컨테이너 실사용은 힙 + 메타스페이스 + 스레드 스택이라 768m보다 늘 크다.
+# 그래서 compose 의 mem_limit 은 1100m 으로 잡아 뒀다.
+ENV JAVA_OPTS="-Xms256m -Xmx768m -XX:MaxMetaspaceSize=128m"
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

@@ -1,11 +1,11 @@
-# 서버(EC2 t3.micro)의 ~/deploy/docker-compose.yml 과 같아야 하는 파일이다.
+# 서버(EC2 t3.small)의 ~/deploy/docker-compose.yml 과 같아야 하는 파일이다.
 #
 # 리포 루트의 docker-compose.yml 과 혼동하지 말 것.
 #   루트     = 로컬 개발용 MySQL
 #   이 파일  = 운영 컨테이너 (backend blue/green + frontend)
 #
 # 이미지는 서버에서 빌드하지 않는다. Actions가 GHCR에 올린 것을 pull 만 한다.
-# 램이 1GB뿐이라 서버에서 build 를 돌리면 다른 컨테이너가 OOM 으로 죽는다.
+# 램이 2GB뿐이라 서버에서 build 를 돌리면 다른 컨테이너가 OOM 으로 죽는다.
 #
 # ------------------------------------------------------------------
 # 블루-그린
@@ -35,10 +35,10 @@ services:
       default:
         aliases:
           - backend
-    # 램이 1GB다. 교체할 때 30초쯤 두 개가 같이 뜨므로 한쪽이 다 먹으면 안 된다.
-    # 그 겹치는 구간은 setup-bluegreen.sh 가 잡아둔 2G 스왑이 받아준다(느려질 뿐 죽지 않는다).
-    # 스왑이 없으면 여기서 OOM 킬이 난다 — swapon --show 로 먼저 확인할 것.
-    mem_limit: 700m
+    # 램이 2GB다. 교체할 때 두 개가 같이 뜨므로 한쪽이 다 먹으면 안 된다.
+    # 힙 768m + 힙 외(메타스페이스·스레드 스택)까지 1100m 안에 들어간다.
+    # 겹치는 구간은 setup-bluegreen.sh 가 잡아둔 스왑이 받아준다 — swapon --show 로 확인.
+    mem_limit: 1100m
     logging:
       driver: json-file
       options:
@@ -57,7 +57,7 @@ services:
       default:
         aliases:
           - backend
-    mem_limit: 700m
+    mem_limit: 1100m
     logging:
       driver: json-file
       options:

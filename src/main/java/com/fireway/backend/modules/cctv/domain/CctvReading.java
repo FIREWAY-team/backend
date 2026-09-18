@@ -1,5 +1,23 @@
 package com.fireway.backend.modules.cctv.domain;
+
+import java.time.LocalDateTime;
 import java.util.Map;
-// verdict는 차종별(pump-3.5, pump-8) 동시 판정 — AI 파이프라인이 cctv_readings.verdict
-// 컬럼(JSON)에 {"pump-3.5": "PASS", "pump-8": "FAIL"} 형태로 채운다. 단일 status 문자열이 아니다.
-public record CctvReading(String cctvId, double effectiveWidthM, Map<String, String> verdict, double confidence) { }
+
+// verdict 는 AI 파이프라인이 cctv_readings.verdict(JSON) 에 {"pump-3.5":"PASS","pump-8":"FAIL"}
+// 형태로 채운다. 옛 fixture 의 {"status":"PASS"} 도 adapter 가 흡수해 여기서는 항상 통일된 Map.
+// lat/lon/s3Key/contentType 은 source_meta JSON 에서 추출. 없으면 null — 서비스가 fallback 처리.
+public record CctvReading(
+        String cctvId,
+        Double effectiveWidthM,
+        Double wallWidthM,
+        Double obstacleWidthM,
+        Map<String, String> verdict,
+        Double confidence,
+        LocalDateTime measuredAt,
+        LocalDateTime lastAttemptedAt,
+        Double lat,
+        Double lon,
+        String s3Key,
+        String contentType,
+        String measurementStatus,
+        String stillPublicUrl) { }

@@ -1,8 +1,16 @@
 package com.fireway.backend;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import com.fireway.backend.modules.cctv.application.CctvService;
+import com.fireway.backend.modules.cctv.application.port.CctvReadingRepository;
+import com.fireway.backend.modules.cctv.domain.CctvReading;
 import com.fireway.backend.modules.cctv.interfaces.CctvController;
 import com.fireway.backend.modules.routing.application.*;
+import com.fireway.backend.shared.storage.StorageProperties;
+import java.time.Duration;
+import java.util.Map;
+import java.util.Optional;
+import org.springframework.beans.factory.ObjectProvider;
 import com.fireway.backend.modules.routing.infrastructure.*;
 import com.fireway.backend.modules.vehicles.application.port.VehicleRepository;
 import static org.mockito.Mockito.mock;
@@ -34,7 +42,7 @@ class ControllerSmokeTest {
         mvc = MockMvcBuilders.standaloneSetup(
             new ScenarioController(new ScenarioService(null)),
             new NoGoController(new NoGoAreaService(List::of)),
-            new CctvController(),
+            new CctvController(new CctvService(stubReadingRepo(), noStorage(), stubStorageProps())),
             new VehicleController(new VehicleService(null)),
             new RouteController(new RoutePlanner(
                 new VehicleService(mock(VehicleRepository.class)),
@@ -52,4 +60,27 @@ class ControllerSmokeTest {
     @Test void cctv() throws Exception { mvc.perform(get("/api/cctv/cctv-01")).andExpect(status().isOk()); }
     @Test void vehicles() throws Exception { mvc.perform(get("/api/vehicles")).andExpect(status().isOk()); }
     @Test void route() throws Exception { mvc.perform(post("/api/route").contentType("application/json").content("{\"vehicle_id\":\"pump-3.5\",\"from\":{\"lat\":37.44,\"lon\":127.14},\"to\":{\"lat\":37.45,\"lon\":127.16}}")).andExpect(status().isOk()); }
+
+    private static CctvReadingRepository stubReadingRepo() {
+        return new CctvReadingRepository() {
+            @Override public Optional<CctvReading> findById(String id) {
+                return Optional.of(new CctvReading(id, 4.1, 5.2, 1.1,
+                        Map.of("pump-3.5", "PASS", "pump-8", "UNCERTAIN"),
+                        0.94, null, null, 37.43, 127.13, null, null, "computed", null));
+            }
+            @Override public java.util.List<CctvReading> findAll() { return java.util.List.of(); }
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ObjectProvider<com.fireway.backend.shared.storage.StoragePort> noStorage() {
+        return (ObjectProvider<com.fireway.backend.shared.storage.StoragePort>)
+                mock(ObjectProvider.class);
+    }
+
+    private static StorageProperties stubStorageProps() {
+        return new StorageProperties("test", "ap-northeast-2", Duration.ofMinutes(5),
+                Duration.ofMinutes(10), 10_485_760L, 52_428_800L,
+                "build/local-storage", "http://localhost:8080");
+    }
 }
