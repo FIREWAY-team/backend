@@ -1,4 +1,11 @@
 package com.fireway.backend.modules.cctv.application.port;
+
 import com.fireway.backend.modules.cctv.domain.CctvReading;
+import java.util.List;
 import java.util.Optional;
-public interface CctvReadingRepository { Optional<CctvReading> findById(String id); }
+
+public interface CctvReadingRepository {
+    Optional<CctvReading> findById(String id);
+
+    List<CctvReading> findAll();
+}
