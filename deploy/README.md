@@ -88,16 +88,21 @@ bash $REPO/deploy/deploy.sh
 
 ### 메모리
 
-t3.micro 는 램이 1GB 다. 교체 중에는 백엔드 컨테이너가 두 개 뜬다.
+t3.small 은 램이 2GB 다 (2026-09-15 에 t3.micro 1GB 에서 올렸다).
+교체 중에는 백엔드 컨테이너가 두 개 뜬다.
 
 ```
-backend   214MB   (실측)
-frontend    8MB
+backend   158MB   (t3.small 기동 직후 실측)
+frontend   95MB
 스왑      2GB     (이미 붙어 있음)
 ```
 
-두 개여도 430MB 남짓이라 들어간다. 각 컨테이너에 `mem_limit: 700m` 을 걸어
-한 쪽이 폭주해도 다른 쪽을 죽이지 못하게 했다.
+두 개여도 400MB 남짓이라 여유가 크다. 각 컨테이너에 `mem_limit: 1100m` 을 걸어
+한 쪽이 폭주해도 다른 쪽을 죽이지 못하게 했다. 힙은 `-Xmx768m` 이고, 힙 외
+(메타스페이스·스레드 스택)까지 합쳐 1100m 안에 들어간다.
+
+힙은 이미지 기본값(Dockerfile)으로 들어간다. 서버에서 바꿔야 할 때만
+`~/deploy/backend.env` 의 `JAVA_OPTS` 로 덮어쓴다.
 
 ### 전환 (한 번만)
 
