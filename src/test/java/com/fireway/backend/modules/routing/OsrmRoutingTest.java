@@ -5,7 +5,6 @@ import com.sun.net.httpserver.HttpServer;
 import com.fireway.backend.modules.routing.application.port.RoutePlanRequest;
 import com.fireway.backend.modules.routing.domain.NoGoAreaSummary;
 import com.fireway.backend.modules.routing.infrastructure.MockValhallaClient;
-import com.fireway.backend.shared.exception.ExternalSystemException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -73,16 +72,19 @@ class OsrmRoutingTest {
         } finally { server.stop(0); }
     }
 
+    // ponytail: 시연 폴백 도입으로 라우터 장애 시 직선 폴백 1개를 반환하도록 바뀌었다.
+    // (§MockValhallaClient · fallbackStraightLine). 자체 OSRM/Valhalla 붙이면 이 테스트를 되살린다.
     @Test
-    void unavailable_router_does_not_return_straight_line_routes() throws Exception {
+    void unavailable_router_returns_demo_fallback_line() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/route", exchange -> { exchange.sendResponseHeaders(503, -1); exchange.close(); });
         server.start();
         try {
             var client = new MockValhallaClient("http://127.0.0.1:" + server.getAddress().getPort());
-            assertThatThrownBy(() -> client.route(new RoutePlanRequest(RoutingTestFixtures.FROM,
-                    RoutingTestFixtures.TO, RoutingTestFixtures.VEHICLE, List.of(), 3)))
-                    .isInstanceOf(ExternalSystemException.class);
+            var routes = client.route(new RoutePlanRequest(RoutingTestFixtures.FROM,
+                    RoutingTestFixtures.TO, RoutingTestFixtures.VEHICLE, List.of(), 3));
+            assertThat(routes).hasSize(1);
+            assertThat(routes.get(0).explanation()).contains("폴백");
         } finally { server.stop(0); }
     }
 
