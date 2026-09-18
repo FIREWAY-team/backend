@@ -48,11 +48,14 @@ public class CctvController {
     }
 
     private static CctvSummary toSummary(CctvReading r) {
-        String status = r.verdict() == null ? null : r.verdict().get("status");
-        return new CctvSummary(r.cctvId(), r.lat(), r.lon(),
-                r.verdict() == null ? Map.of() : r.verdict(),
-                status,
-                r.measurementStatus());
+        Map<String, String> v = r.verdict() == null ? Map.of() : r.verdict();
+        // verdict 는 두 shape · {"status":"PASS"} (옛 fixture) 또는 {"pump-3.5":"PASS","pump-8":"FAIL"} (AI 파이프라인).
+        // 마커 색 하나만 필요하므로 status → pump-3.5 → pump-8 → 첫 값 순 fallback.
+        String status = v.get("status");
+        if (status == null) status = v.get("pump-3.5");
+        if (status == null) status = v.get("pump-8");
+        if (status == null && !v.isEmpty()) status = v.values().iterator().next();
+        return new CctvSummary(r.cctvId(), r.lat(), r.lon(), v, status, r.measurementStatus());
     }
 
     private static String mediaStatus(CctvReading r, String url) {
