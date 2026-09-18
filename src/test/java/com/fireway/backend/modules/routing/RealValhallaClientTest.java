@@ -3,7 +3,6 @@ package com.fireway.backend.modules.routing;
 import static org.assertj.core.api.Assertions.*;
 import com.fireway.backend.modules.routing.application.port.RoutePlanRequest;
 import com.fireway.backend.modules.routing.infrastructure.RealValhallaClient;
-import com.fireway.backend.shared.exception.ExternalSystemException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.*;
@@ -41,16 +40,21 @@ class RealValhallaClientTest {
         assertThat(result.get(1).etaSec()).isEqualTo(280);
     }
 
+    // ponytail: 시연 마감 폴백 도입 후 원격 실패·응답 오류는 예외 대신 직선 폴백 1개를 반환한다.
+    // (§RealValhallaClient · fallbackStraightLine). Valhalla 안정화되면 원래 계약으로 복귀한다.
     @Test
-    void translates_remote_http_errors_to_external_system_errors() {
-        assertThatThrownBy(() -> client(HttpStatus.SERVICE_UNAVAILABLE, "{}").route(request()))
-                .isInstanceOf(ExternalSystemException.class);
+    void remote_http_errors_return_demo_fallback_line() {
+        var routes = client(HttpStatus.SERVICE_UNAVAILABLE, "{}").route(request());
+        assertThat(routes).hasSize(1);
+        assertThat(routes.get(0).explanation()).contains("폴백");
     }
 
     @Test
-    void rejects_malformed_trip_geometry() {
-        assertThatThrownBy(() -> client(HttpStatus.OK, """
+    void malformed_trip_returns_demo_fallback_line() {
+        var routes = client(HttpStatus.OK, """
                 {"trip":{"status":0,"summary":{"time":200,"length":1},"legs":[{"shape":"?"}]}}
-                """).route(request())).isInstanceOf(ExternalSystemException.class);
+                """).route(request());
+        assertThat(routes).hasSize(1);
+        assertThat(routes.get(0).explanation()).contains("폴백");
     }
 }

@@ -3,7 +3,6 @@ package com.fireway.backend.modules.routing.infrastructure;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fireway.backend.modules.routing.application.port.*;
 import com.fireway.backend.modules.routing.domain.RouteCandidate;
-import com.fireway.backend.shared.exception.ExternalSystemException;
 import java.time.Duration;
 import java.util.*;
 import org.slf4j.Logger;
@@ -52,10 +51,25 @@ public class RealValhallaClient implements ValhallaClient {
             }
             return candidates;
         } catch (RuntimeException error) {
-            // ExternalSystemException 은 sealed 계층상 cause 미지원 — 로그로 근본 원인 보존.
-            log.warn("Valhalla 경로 조회 실패: {}", error.getMessage(), error);
-            throw new ExternalSystemException("Valhalla 경로 조회에 실패했습니다.");
+            log.warn("Valhalla 경로 조회 실패 · 시연 폴백 직선 반환: {}", error.getMessage(), error);
+            // ponytail: 자체 Valhalla 안정화되면 이 폴백 제거하고 ExternalSystemException 로 복귀.
+            return List.of(fallbackStraightLine(request));
         }
+    }
+
+    private static RouteCandidate fallbackStraightLine(RoutePlanRequest request) {
+        double fromLon = request.from().lon(), fromLat = request.from().lat();
+        double toLon = request.to().lon(), toLat = request.to().lat();
+        List<double[]> pts = List.of(new double[]{fromLon, fromLat}, new double[]{toLon, toLat});
+        double dLat = Math.toRadians(toLat - fromLat), dLon = Math.toRadians(toLon - fromLon);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(fromLat)) * Math.cos(Math.toRadians(toLat))
+                        * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double distanceM = 6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        int etaSec = (int) Math.ceil(distanceM / (40.0 * 1000 / 3600));
+        RouteCandidate rc = new RouteCandidate(1, pts, PolylineCodec.encode(pts), etaSec, distanceM);
+        rc.setExplanation("라우터 폴백 · 실 도로 아님 (Valhalla 응답 없음)");
+        return rc;
     }
 
     private RouteCandidate parseTrip(JsonNode trip, int rank) {
