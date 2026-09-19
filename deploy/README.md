@@ -25,6 +25,59 @@
   않는다 (`chmod 600`). 형식은 리포 루트의 `backend.env.example` 참고
 - **`~/deploy/deploy-frontend.sh`** — 프론트 배포 스크립트. 이 리포 소관이
   아니라 옮기지 않았다. 프론트 리포로 옮기는 게 맞다
+- **nginx 설정** — `/etc/nginx/sites-available/fireway`,
+  `/etc/nginx/conf.d/backend-upstream.conf`, `/etc/nginx/conf.d/upload-ratelimit.conf`.
+  라우팅 규칙은 아래 "nginx 라우팅" 참고
+
+## nginx 라우팅
+
+**외부에서 오는 `/api/*` 는 전부 Next(frontend)로 보낸다. Spring 으로 직접 보내지 않는다.**
+
+프론트는 BFF 구조다. 브라우저는 Next 의 `/api/*` 를 camelCase 로 부르고,
+Next 가 snake_case 로 바꿔 compose 별칭 `http://backend:8080` 으로 Spring 을 부른다.
+nginx 가 `/api/*` 를 Spring 으로 보내면 이 변환을 건너뛰어 요청이 깨진다.
+
+`sites-available/fireway` 의 location (2026-09-19 `sudo nginx -T` 기준):
+
+| location | 가는 곳 | 왜 |
+|---|---|---|
+| `/actuator/` | `backend_active` (Spring) | 배포 헬스체크. 외부에서 Spring 으로 직접 가는 건 이것뿐 |
+| `= /api/files/upload-url` | `127.0.0.1:3000` (Next) | rate limit 을 이 경로에만 걸려고 따로 뺐다 |
+| `/` | `127.0.0.1:3000` (Next) | 나머지 전부. `/api/*` 도 여기로 간다 |
+
+rate limit 때문에 location 을 새로 만들 때도 `proxy_pass` 는 `127.0.0.1:3000` 이다.
+제한은 nginx 에서 브라우저 IP 기준으로 걸리고, Next -> Spring 호출은 nginx 를
+거치지 않으니 영향이 없다.
+
+2026-09-19 까지 `= /api/files/upload-url` 이 `backend_active` 로 가고 있었다.
+브라우저의 `{"contentType": ...}` 가 BFF 를 건너뛰고 Spring 에 그대로 도착해
+`content_type` 이 비었다고 422 가 났다. `proxy_pass` 를 `127.0.0.1:3000` 으로 바꿔
+고쳤다 (서버 백업 `~/fireway.nginx.bak-20260919`).
+
+### 업로드 URL rate limit
+
+```
+# conf.d/upload-ratelimit.conf
+limit_req_zone $binary_remote_addr zone=upload_url:10m rate=5r/m;
+limit_req_status 429;
+
+# sites-available/fireway 의 location = /api/files/upload-url
+limit_req zone=upload_url burst=3 nodelay;
+```
+
+IP 당 분당 5회, 넘치면 429. presigned PUT 은 크기를 못 막아서, 발급 횟수를 여기서
+제한한다 (`application.yml` 의 `max-upload-bytes` 주석 참고).
+
+### 바꿀 때
+
+```
+sudo cp /etc/nginx/sites-available/fireway ~/fireway.nginx.bak-$(date +%Y%m%d)
+# 편집
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+백업을 `sites-enabled/` 안에 두지 않는다. Ubuntu 기본 `nginx.conf` 는
+`sites-enabled/*` 를 전부 읽어서 server 블록이 겹친다.
 
 ## 배포가 도는 방식
 
