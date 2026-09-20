@@ -44,7 +44,7 @@ public class CctvController {
                 nz(r.confidence()),
                 r.contentType(), mediaStatus, r.measurementStatus(),
                 iso(r.measuredAt()), iso(r.lastAttemptedAt()),
-                svc.mediaUrlTtlSeconds());
+                svc.mediaUrlTtlSeconds(), r.demoAssignment());
     }
 
     private static CctvSummary toSummary(CctvReading r) {
@@ -89,7 +89,8 @@ public class CctvController {
             String measurementStatus,
             String measuredAt,
             String measurementFailureAt,
-            long mediaUrlExpiresInSeconds) { }
+            long mediaUrlExpiresInSeconds,
+            CctvReading.DemoAssignment demoAssignment) { }
 
     /** 지도 마커용. lat/lon 이 null 이면 프론트가 그 마커는 스킵한다. */
     public record CctvSummary(

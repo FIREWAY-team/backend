@@ -1,5 +1,6 @@
 package com.fireway.backend;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import com.fireway.backend.modules.cctv.application.CctvService;
 import com.fireway.backend.modules.cctv.application.port.CctvReadingRepository;
@@ -57,7 +58,12 @@ class ControllerSmokeTest {
     }
     @Test void scenarios() throws Exception { mvc.perform(get("/api/scenarios")).andExpect(status().isOk()); }
     @Test void noGo() throws Exception { mvc.perform(get("/api/no_go")).andExpect(status().isOk()); }
-    @Test void cctv() throws Exception { mvc.perform(get("/api/cctv/cctv-01")).andExpect(status().isOk()); }
+    @Test void cctv() throws Exception {
+        mvc.perform(get("/api/cctv/cctv-01"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.demo_assignment.evidence_cctv_id").value("cctv_moran_a41"))
+                .andExpect(jsonPath("$.demo_assignment.reassigned").value(true));
+    }
     @Test void vehicles() throws Exception { mvc.perform(get("/api/vehicles")).andExpect(status().isOk()); }
     @Test void route() throws Exception { mvc.perform(post("/api/route").contentType("application/json").content("{\"vehicle_id\":\"pump-3.5\",\"from\":{\"lat\":37.44,\"lon\":127.14},\"to\":{\"lat\":37.45,\"lon\":127.16}}")).andExpect(status().isOk()); }
 
@@ -66,7 +72,8 @@ class ControllerSmokeTest {
             @Override public Optional<CctvReading> findById(String id) {
                 return Optional.of(new CctvReading(id, 4.1, 5.2, 1.1,
                         Map.of("pump-3.5", "PASS", "pump-8", "UNCERTAIN"),
-                        0.94, null, null, 37.43, 127.13, null, null, "computed", null));
+                        0.94, null, null, 37.43, 127.13, null, null, "computed", null,
+                        new CctvReading.DemoAssignment("cctv_moran_a41", true, true)));
             }
             @Override public java.util.List<CctvReading> findAll() { return java.util.List.of(); }
         };

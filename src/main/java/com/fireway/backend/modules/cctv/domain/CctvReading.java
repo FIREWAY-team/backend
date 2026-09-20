@@ -20,4 +20,11 @@ public record CctvReading(
         String s3Key,
         String contentType,
         String measurementStatus,
-        String stillPublicUrl) { }
+        String stillPublicUrl,
+        DemoAssignment demoAssignment) {
+
+    public record DemoAssignment(
+            String evidenceCctvId,
+            boolean sharedPassFootage,
+            boolean reassigned) { }
+}

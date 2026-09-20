@@ -80,7 +80,7 @@ public class CctvReadingRepositoryAdapter implements CctvReadingRepository {
                 cctvId, effective, wall, obstacle, verdict, confidence, measuredAt,
                 sm.lastAttemptedAt(), sm.lat(), sm.lon(),
                 sm.s3Key(), sm.contentType(), sm.measurementStatus(),
-                rs.getString("still_public_url"));
+                rs.getString("still_public_url"), sm.demoAssignment());
     }
 
     private Map<String, String> parseVerdict(String json) {
@@ -118,7 +118,18 @@ public class CctvReadingRepositoryAdapter implements CctvReadingRepository {
                 s3Key = textAt(s3, "key");
                 contentType = textAt(s3, "content_type");
             }
-            return new SourceMeta(lat, lon, s3Key, contentType, status, lastAttempt);
+            CctvReading.DemoAssignment assignment = null;
+            JsonNode demo = root.path("demo_assignment");
+            if (demo.isObject()) {
+                String evidenceCctvId = textAt(demo, "evidence_cctv_id");
+                if (evidenceCctvId != null) {
+                    assignment = new CctvReading.DemoAssignment(
+                            evidenceCctvId,
+                            demo.path("shared_pass_footage").asBoolean(false),
+                            demo.path("reassigned").asBoolean(false));
+                }
+            }
+            return new SourceMeta(lat, lon, s3Key, contentType, status, lastAttempt, assignment);
         } catch (Exception e) {
             log.warn("source_meta JSON 파싱 실패: {}", e.getMessage());
             return SourceMeta.EMPTY;
@@ -154,7 +165,8 @@ public class CctvReadingRepositoryAdapter implements CctvReadingRepository {
     }
 
     private record SourceMeta(Double lat, Double lon, String s3Key, String contentType,
-            String measurementStatus, LocalDateTime lastAttemptedAt) {
-        static final SourceMeta EMPTY = new SourceMeta(null, null, null, null, null, null);
+            String measurementStatus, LocalDateTime lastAttemptedAt,
+            CctvReading.DemoAssignment demoAssignment) {
+        static final SourceMeta EMPTY = new SourceMeta(null, null, null, null, null, null, null);
     }
 }
