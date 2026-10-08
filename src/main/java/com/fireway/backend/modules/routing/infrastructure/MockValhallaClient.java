@@ -52,6 +52,13 @@ public class MockValhallaClient implements ValhallaClient {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final String baseUrl;
+    /**
+     * 같은 질의는 한 번만 보낸다. 차량 여러 대를 한 번에 계산하면 기본 경로 질의가 차량 수만큼 겹치고,
+     * 시연을 다시 돌릴 때도 같은 좌표를 또 묻는다. 둘 다 공개 OSRM fair-use 를 갉아먹는다.
+     * 예산(8초)을 넘겨 버린 응답도 여기 남으므로 다음 요청은 즉시 받는다. 실패·비정상 응답은 남기지 않는다.
+     */
+    // ponytail: 무기한 · 크기 무제한 캐시. 시연 좌표 몇 쌍이라 충분. 임의 좌표를 받기 시작하면 TTL·상한을 건다.
+    private final ConcurrentMap<URI, CompletableFuture<HttpResponse<String>>> responses = new ConcurrentHashMap<>();
     public MockValhallaClient(@org.springframework.beans.factory.annotation.Value("${OSRM_URL:https://router.project-osrm.org}") String baseUrl) {
         this.baseUrl = baseUrl;
     }
@@ -123,8 +130,14 @@ public class MockValhallaClient implements ValhallaClient {
 
     private CompletableFuture<List<RouteCandidate>> search(RoutePlanRequest request, Coordinate via) {
         // 블로킹 send 와 달리 sendAsync 는 스레드를 붙잡지 않는다. 후보 조회가 실제로 동시에 나간다.
-        return HTTP.sendAsync(osrmRequest(request, via), HttpResponse.BodyHandlers.ofString())
-                .thenApply(response -> parse(request, via, response));
+        HttpRequest http = osrmRequest(request, via);
+        CompletableFuture<HttpResponse<String>> response = responses.computeIfAbsent(http.uri(),
+                uri -> HTTP.sendAsync(http, HttpResponse.BodyHandlers.ofString()));
+        response.whenComplete((res, error) -> {
+            if (error != null || res.statusCode() != 200) responses.remove(http.uri(), response);
+        });
+        // 늦은 후보를 버릴 때 cancel 되는 것은 아래 파생 future 뿐이다. 공유 응답은 그대로 남는다.
+        return response.thenApply(res -> parse(request, via, res));
     }
 
     private HttpRequest osrmRequest(RoutePlanRequest request, Coordinate via) {
