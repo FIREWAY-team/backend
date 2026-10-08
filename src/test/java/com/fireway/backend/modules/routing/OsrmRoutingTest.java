@@ -107,4 +107,36 @@ class OsrmRoutingTest {
                     RoutingTestFixtures.TO, RoutingTestFixtures.VEHICLE, List.of(), 3))).isEmpty();
         } finally { server.stop(0); }
     }
+
+    // 차량 3대를 한 번에 계산하면 기본 경로 질의가 3번 겹친다. 공개 OSRM 에는 한 번만 나가야 한다.
+    @Test
+    void same_query_hits_osrm_once_but_failures_are_retried() throws Exception {
+        List<String> paths = new CopyOnWriteArrayList<>();
+        int[] status = {503};
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/route", exchange -> {
+            paths.add(exchange.getRequestURI().getPath());
+            byte[] body = """
+                {"code":"Ok","waypoints":[{"distance":0},{"distance":0}],
+                 "routes":[{"geometry":{"coordinates":[[127.14,37.44],[127.16,37.45]]},"duration":123,"distance":1000}]}
+                """.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(status[0], body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            var client = new MockValhallaClient("http://127.0.0.1:" + server.getAddress().getPort());
+            var request = new RoutePlanRequest(RoutingTestFixtures.FROM, RoutingTestFixtures.TO,
+                    RoutingTestFixtures.VEHICLE, List.of(), 3, List.of());
+            client.route(request);                 // 503 → 폴백, 캐시에 남기지 않는다
+            status[0] = 200;
+            var first = client.route(request);     // 다시 물어본다
+            var second = client.route(request);    // 캐시
+            assertThat(paths).hasSize(2);
+            assertThat(second.get(0).etaSec()).isEqualTo(123);
+            // 후보 객체는 매번 새로 만든다. 차량별로 explanation 등을 덮어쓰기 때문이다.
+            assertThat(second.get(0)).isNotSameAs(first.get(0));
+        } finally { server.stop(0); }
+    }
 }

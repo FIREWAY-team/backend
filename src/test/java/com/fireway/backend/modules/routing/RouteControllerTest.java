@@ -73,4 +73,38 @@ class RouteControllerTest {
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(planner);
     }
+
+    @Test
+    void batch_plans_each_vehicle_and_keys_by_vehicle_id() throws Exception {
+        when(planner.plan(any())).thenAnswer(call -> new RoutePlanResult(RoutingTestFixtures.candidates(), 5, 3,
+                new double[0][0], "normal", 0, true, true, RoutingTestFixtures.VEHICLE));
+        mvc.perform(post("/api/route/batch").contentType("application/json").content("""
+                {"vehicle_ids":["pump-3.5","pump-8","pump-15","pump-8"],
+                 "from":{"lat":37.44,"lon":127.14},"to":{"lat":37.45,"lon":127.16}}
+                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.routes_by_vehicle.length()").value(3))
+                .andExpect(jsonPath("$.routes_by_vehicle['pump-15'].routes", hasSize(3)));
+        verify(planner, times(3)).plan(any());
+        verify(planner).plan(RoutingTestFixtures.command());
+    }
+
+    @Test
+    void batch_surfaces_unknown_vehicle_as_404_not_500() throws Exception {
+        when(planner.plan(any())).thenThrow(
+                new com.fireway.backend.shared.exception.NotFoundException("차량을 찾을 수 없습니다: nope"));
+        mvc.perform(post("/api/route/batch").contentType("application/json").content("""
+                {"vehicle_ids":["nope"],"from":{"lat":37.44,"lon":127.14},"to":{"lat":37.45,"lon":127.16}}
+                """))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void batch_requires_vehicle_ids() throws Exception {
+        mvc.perform(post("/api/route/batch").contentType("application/json").content("""
+                {"vehicle_ids":[],"from":{"lat":37.44,"lon":127.14},"to":{"lat":37.45,"lon":127.16}}
+                """))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(planner);
+    }
 }
