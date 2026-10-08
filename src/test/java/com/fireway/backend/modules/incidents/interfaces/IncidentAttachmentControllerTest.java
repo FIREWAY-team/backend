@@ -38,9 +38,10 @@ class IncidentAttachmentControllerTest {
         public Optional<Incident> findByNo(String no) {
             return NO.equals(no)
                     ? Optional.of(new Incident(1, NO, IncidentStatus.RECEIVED, "주소", 37.4381, 127.1422, "",
-                            LocalDateTime.now(고정시계), null))
+                            LocalDateTime.now(고정시계), null, Incident.Intake.EMPTY))
                     : Optional.empty();
         }
+        public boolean updateStatus(Incident moved, IncidentStatus expected) { return false; }
         public int lastSequenceOn(LocalDate d) { return 0; }
     }
     private static final class Attachments implements IncidentAttachmentRepository {
