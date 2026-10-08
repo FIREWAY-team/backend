@@ -13,6 +13,9 @@ public interface IncidentRepository {
 
     Optional<Incident> findByNo(String incidentNo);
 
+    /** 상태가 아직 expected 일 때만 status · closed_at 을 바꾼다. 바뀌었으면 true. */
+    boolean updateStatus(Incident moved, IncidentStatus expected);
+
     /**
      * 그날 실제로 쓴 접수번호 일련번호의 최댓값. 아직 없으면 0.
      * 건수가 아니라 최댓값인 이유는, 행이 하나라도 지워졌을 때 건수는 뒤로 돌아가지만

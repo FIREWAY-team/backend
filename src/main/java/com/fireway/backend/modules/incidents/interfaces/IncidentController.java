@@ -3,6 +3,7 @@ import com.fireway.backend.modules.incidents.application.IncidentService;
 import com.fireway.backend.modules.incidents.domain.IncidentStatus;
 import com.fireway.backend.modules.incidents.interfaces.dto.IncidentRequest;
 import com.fireway.backend.modules.incidents.interfaces.dto.IncidentResponse;
+import com.fireway.backend.modules.incidents.interfaces.dto.StatusChangeRequest;
 import com.fireway.backend.shared.exception.ValidationException;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
     @PostMapping @ResponseStatus(HttpStatus.CREATED)
     public IncidentResponse receive(@Valid @RequestBody IncidentRequest request) {
         return IncidentResponse.from(service.receive(
-                request.address(), request.lat(), request.lon(), request.summary()));
+                request.address(), request.lat(), request.lon(), request.summary(), request.intake()));
     }
 
     /** status 를 주지 않으면 전체. 접수 최신순. */
@@ -27,6 +28,13 @@ import org.springframework.web.bind.annotation.*;
     @GetMapping("/{incidentNo}")
     public IncidentResponse get(@PathVariable String incidentNo) {
         return IncidentResponse.from(service.get(incidentNo));
+    }
+
+    /** 접수 → 출동 → 현장도착 → 종결/취소. 되돌리거나 종결 뒤에 바꾸면 409. */
+    @PatchMapping("/{incidentNo}/status")
+    public IncidentResponse changeStatus(@PathVariable String incidentNo,
+                                         @Valid @RequestBody StatusChangeRequest request) {
+        return IncidentResponse.from(service.changeStatus(incidentNo, parse(request.status())));
     }
 
     private static IncidentStatus parse(String status) {

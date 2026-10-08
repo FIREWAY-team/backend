@@ -7,6 +7,8 @@ spring:
     enabled: true
     baseline-on-migrate: true
     locations: classpath:db/migration
+    # 인원별 major 규칙상 V2.7 이 V5.3 뒤에 도착한다. 서버 env 로만 켜 두던 것을 여기로 옮긴다.
+    out-of-order: true
   jackson:
     property-naming-strategy: SNAKE_CASE
     time-zone: Asia/Seoul

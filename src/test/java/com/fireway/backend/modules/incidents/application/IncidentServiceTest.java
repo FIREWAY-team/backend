@@ -103,4 +103,29 @@ class IncidentServiceTest {
         assertThatThrownBy(() -> service.receive("주소", LAT, LON, null))
                 .isInstanceOf(ConflictException.class);
     }
+
+    @Test void 출동_현장도착_종결_순으로_가고_종결하면_closedAt_이_찍힌다() {
+        String no = service.receive("주소", LAT, LON, null).incidentNo();
+        assertThat(service.changeStatus(no, IncidentStatus.DISPATCHED).closedAt()).isNull();
+        service.changeStatus(no, IncidentStatus.ON_SCENE);
+        Incident closed = service.changeStatus(no, IncidentStatus.CLOSED);
+        assertThat(closed.closedAt()).isEqualTo(LocalDateTime.now(고정시계));
+        assertThat(service.get(no).status()).isEqualTo(IncidentStatus.CLOSED);
+    }
+
+    @Test void 되돌리거나_종결_뒤에_바꾸면_409() {
+        String no = service.receive("주소", LAT, LON, null).incidentNo();
+        service.changeStatus(no, IncidentStatus.DISPATCHED);
+        assertThatThrownBy(() -> service.changeStatus(no, IncidentStatus.RECEIVED))
+                .isInstanceOf(ConflictException.class);
+        service.changeStatus(no, IncidentStatus.CANCELLED);
+        assertThatThrownBy(() -> service.changeStatus(no, IncidentStatus.CLOSED))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test void 접수_상세가_그대로_저장된다() {
+        var intake = new Incident.Intake("조OO", "010-****-5245", "large", 242, "4층 오피스텔", true, "골목 진입 어려움");
+        Incident i = service.receive("주소", LAT, LON, null, intake);
+        assertThat(service.get(i.incidentNo()).intake()).isEqualTo(intake);
+    }
 }

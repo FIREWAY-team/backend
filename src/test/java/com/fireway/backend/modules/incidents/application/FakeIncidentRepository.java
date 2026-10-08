@@ -35,6 +35,12 @@ class FakeIncidentRepository implements IncidentRepository {
     @Override public Optional<Incident> findByNo(String no) {
         return rows.stream().filter(r -> r.incidentNo().equals(no)).findFirst();
     }
+    @Override public boolean updateStatus(Incident moved, IncidentStatus expected) {
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).id() == moved.id() && rows.get(i).status() == expected) { rows.set(i, moved); return true; }
+        }
+        return false;
+    }
     @Override public int lastSequenceOn(LocalDate date) {
         return issued.getOrDefault(Incident.numberPrefix(date), 0);
     }

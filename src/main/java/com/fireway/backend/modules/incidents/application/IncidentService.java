@@ -32,6 +32,10 @@ import org.springframework.stereotype.Service;
     }
 
     public Incident receive(String address, double lat, double lon, String summary) {
+        return receive(address, lat, lon, summary, Incident.Intake.EMPTY);
+    }
+
+    public Incident receive(String address, double lat, double lon, String summary, Incident.Intake intake) {
         if (lat < MIN_LAT || lat > MAX_LAT || lon < MIN_LON || lon > MAX_LON) {
             throw new ValidationException(
                     "좌표가 관할 권역을 크게 벗어납니다: lat=%f, lon=%f — 위경도가 뒤바뀌지 않았는지 확인하세요."
@@ -40,7 +44,7 @@ import org.springframework.stereotype.Service;
         LocalDateTime now = LocalDateTime.now(clock);
         DuplicateKeyException last = null;
         for (int attempt = 0; attempt < NUMBERING_RETRIES; attempt++) {
-            Incident draft = Incident.received(nextNumber(now.toLocalDate()), address, lat, lon, summary, now);
+            Incident draft = Incident.received(nextNumber(now.toLocalDate()), address, lat, lon, summary, now, intake);
             try {
                 return draft.withId(repository.insert(draft));
             } catch (DuplicateKeyException e) {
@@ -65,6 +69,22 @@ import org.springframework.stereotype.Service;
 
     /** status 가 null 이면 전체. 접수 최신순. */
     public List<Incident> list(IncidentStatus status) { return repository.findAll(status); }
+
+    /**
+     * 상태를 바꾼다. 되돌리기·종결 뒤 변경은 409.
+     * 조회와 갱신 사이에 다른 요청이 끼면 조건부 UPDATE 가 0건이 되고, 그때도 409 로 알린다.
+     */
+    public Incident changeStatus(String incidentNo, IncidentStatus next) {
+        Incident current = get(incidentNo);
+        if (!current.status().canMoveTo(next)) {
+            throw new ConflictException("%s 상태에서 %s 로 바꿀 수 없습니다.".formatted(current.status(), next));
+        }
+        Incident moved = current.withStatus(next, LocalDateTime.now(clock));
+        if (!repository.updateStatus(moved, current.status())) {
+            throw new ConflictException("다른 요청이 먼저 상태를 바꿨습니다. 다시 조회해 주세요.");
+        }
+        return moved;
+    }
 
     public Incident get(String incidentNo) {
         return repository.findByNo(incidentNo)

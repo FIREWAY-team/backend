@@ -1,5 +1,6 @@
 package com.fireway.backend.modules.incidents.interfaces;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -34,6 +35,10 @@ class IncidentControllerTest {
         }
         public Optional<Incident> findByNo(String no) {
             return rows.stream().filter(r -> r.incidentNo().equals(no)).findFirst();
+        }
+        public boolean updateStatus(Incident moved, IncidentStatus expected) {
+            rows.replaceAll(r -> r.id() == moved.id() ? moved : r);
+            return true;
         }
         public int lastSequenceOn(LocalDate d) { return rows.size(); }
     }
@@ -105,5 +110,39 @@ class IncidentControllerTest {
                 .andExpect(jsonPath("$.length()").value(1));
         mvc.perform(get("/api/incidents").param("status", "CLOSED"))
                 .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test void 상태를_바꾸고_되돌리면_409() throws Exception {
+        mvc.perform(post("/api/incidents").contentType("application/json")
+                .content(body("주소", 37.4381, 127.1422)));
+        mvc.perform(patch("/api/incidents/2026-0915-0001/status").contentType("application/json")
+                        .content("""
+                                {"status":"dispatched"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DISPATCHED"));
+        mvc.perform(patch("/api/incidents/2026-0915-0001/status").contentType("application/json")
+                        .content("""
+                                {"status":"RECEIVED"}"""))
+                .andExpect(status().isConflict());
+    }
+
+    @Test void 접수_상세를_받아_그대로_돌려준다() throws Exception {
+        mvc.perform(post("/api/incidents").contentType("application/json")
+                        .content("""
+                                {"address":"주소","lat":37.4381,"lon":127.1422,"reporter_name":"조OO",
+                                 "severity":"large","estimated_area_m2":242,"building_type":"4층 오피스텔",
+                                 "casualties_reported":true}"""))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.reporter_name").value("조OO"))
+                .andExpect(jsonPath("$.severity").value("large"))
+                .andExpect(jsonPath("$.estimated_area_m2").value(242))
+                .andExpect(jsonPath("$.casualties_reported").value(true));
+    }
+
+    @Test void 규모는_small_medium_large_만() throws Exception {
+        mvc.perform(post("/api/incidents").contentType("application/json")
+                        .content("""
+                                {"address":"주소","lat":37.4381,"lon":127.1422,"severity":"huge"}"""))
+                .andExpect(status().is4xxClientError());
     }
 }
