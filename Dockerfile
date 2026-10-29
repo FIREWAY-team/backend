@@ -20,6 +20,11 @@ RUN ./gradlew clean bootJar --no-daemon -x test
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
+# 베이스 이미지가 아직 반영하지 않은 OS 보안 패치를 받는다.
+# 2026-10-29: 베이스의 brotli-libs 1.2.0-r1이 CISA KEV 등재 취약점(CVE-2026-111497)이었고,
+# 최신 베이스를 다시 받아도 그대로였다. Alpine v3.24 저장소에는 1.2.1-r0이 있다.
+RUN apk upgrade --no-cache
+
 # root로 돌리지 않는다.
 RUN addgroup -S app && adduser -S app -G app
 
